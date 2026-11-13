@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { cleanMe, meCookie, parseMe } from "../static/js/whoami.js";
+import { factsOf, ideasLabel, personHash, renderHome, youFirst, youreGetting } from "../static/js/home.js";
 import { dayLabel, daysLabel, esc, eventDateLabel, hostLabel, inkFor, isStale, monthLabel, money, parseHash, validAccent } from "../static/js/core.js";
 
 test("esc", () => assert.equal(esc(`<a href="x">'&`), "&lt;a href=&quot;x&quot;&gt;&#39;&amp;"));
@@ -95,4 +96,52 @@ test("who am I: bad values are refused", () => {
   }
   assert.equal(cleanMe({ person_id: null, name: "x".repeat(80) }).name.length, 60);
   assert.match(meCookie("cousins", null, false), /^gx_me_cousins=; Path=\/; Max-Age=0;/);
+});
+
+const HOME = {
+  exchange: { slug: "cousins", name: "Cousins <b>", accent_color: null },
+  edition: { id: 7, label: "2026", year: 2026, budget_cents: 5000, event_date: "2026-12-24", location: "Riley's house",
+    rules: "One gift <script>", status: "paired", days_until: 41 },
+  editions: [{ id: 7, label: "2026", status: "paired" }, { id: 6, label: "2025", status: "closed" }],
+  people: [{ id: 1, name: "Alex", item_count: 4, has_amazon: true }, { id: 2, name: "Sam <i>", item_count: 0, has_amazon: false }],
+  pairings: [{ giver_id: 1, giver: "Alex", recipient_id: 2, recipient: "Sam <i>" }, { giver_id: 2, giver: "Sam <i>", recipient_id: 1, recipient: "Alex" }],
+};
+
+test("home: the facts line", () => {
+  assert.deepEqual(factsOf(HOME.edition), ["Thu, Dec 24", "Riley's house", "$50 limit", "in 41 days"]);
+  assert.deepEqual(factsOf({ days_until: 0 }), ["today"]);
+  assert.deepEqual(factsOf({ days_until: -2, budget_cents: null }), ["2 days ago"]);
+});
+
+test("home: you're getting, only for a person on the roster", () => {
+  assert.equal(youreGetting(HOME.pairings, { person_id: 1, name: "Alex" }).recipient_id, 2);
+  assert.equal(youreGetting(HOME.pairings, { person_id: null, name: "Pat" }), null);
+  assert.equal(youreGetting(null, { person_id: 1, name: "Alex" }), null);
+  assert.equal(youreGetting(HOME.pairings, null), null);
+});
+
+test("home: labels and order", () => {
+  assert.equal(ideasLabel(0), "No ideas yet");
+  assert.equal(ideasLabel(1), "1 idea");
+  assert.equal(ideasLabel(4), "4 ideas");
+  assert.deepEqual(youFirst(HOME.people, { person_id: 2, name: "Sam" }).map(p => p.id), [2, 1]);
+  assert.equal(personHash("cousins", 2, "6"), "#/x/cousins/p/2?e=6");
+  assert.equal(personHash("cousins", 2, null), "#/x/cousins/p/2");
+});
+
+test("home: renders escaped, with the banner and who has whom", () => {
+  const html = renderHome(HOME, { person_id: 1, name: "Alex" }, null);
+  assert.ok(html.includes("Cousins &lt;b&gt; · 2026"));
+  assert.ok(html.includes("One gift &lt;script&gt;"));
+  assert.ok(html.includes("You're getting") && html.includes("See Sam &lt;i&gt;'s list"));
+  assert.ok(html.includes("Alex → Sam &lt;i&gt;"));
+  assert.ok(!html.includes("<b>") && !html.includes("<i>") && !html.includes("<script>"));
+  assert.ok(html.includes("2025 (closed)"));
+});
+
+test("home: names not drawn yet, and no banner for just looking", () => {
+  const html = renderHome({ ...HOME, pairings: null }, { person_id: null, name: "Pat" }, null);
+  assert.ok(html.includes("Names not drawn yet."));
+  assert.ok(!html.includes("You're getting"));
+  assert.ok(html.includes("(just looking)"));
 });

@@ -10,6 +10,9 @@ const ID = /^[0-9]{1,15}$/;
 // The screen module for a route, or null when there is nothing at that address.
 function pick(parts) {
   if (parts.length === 0) return () => import("./unlock.js");
+  if (parts[0] === "x" && SLUG.test(parts[1] ?? "")) {
+    if (parts.length === 2) return () => import("./home.js");
+  }
   return null;
 }
 
