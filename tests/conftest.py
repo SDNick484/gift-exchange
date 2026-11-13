@@ -97,3 +97,37 @@ def mk_exchange(con, slug, password, active=1, sort_order=0):
 def token_of(con, exchange_id):
     """The exchange's share-link token, for /x/<slug>/join/<token>."""
     return con.execute("SELECT link_token FROM exchange WHERE id = ?", (exchange_id,)).fetchone()[0]
+
+
+@pytest.fixture
+def admin(client):
+    """The test client, logged in as admin, with `mut()`'s headers on every request it makes."""
+    client.environ_base.update(HTTP_X_EXCHANGE="1", HTTP_ORIGIN=ORIGIN)
+    assert client.post("/api/admin/login", json={"password": "admin-pass"}).status_code == 200
+    return client
+
+
+@pytest.fixture
+def x(con):
+    """An exchange 'family' with people x.alex, x.sam, x.jordan (ids) and no edition. x.id is the exchange id."""
+    xid = mk_exchange(con, "family", "pw12")
+    ids = {n: con.execute("INSERT INTO person (exchange_id, name) VALUES (?, ?)", (xid, n.title())).lastrowid
+           for n in ("alex", "sam", "jordan")}
+    return types.SimpleNamespace(id=xid, **ids)
+
+
+def mk_edition(admin, exchange_id, year, **extra):
+    """Creates an edition through the admin API and returns its id."""
+    r = admin.post(f"/api/admin/exchanges/{exchange_id}/editions", json={"year": year, **extra})
+    assert r.status_code == 201, r.get_json()
+    return r.get_json()["id"]
+
+
+def put_roster(admin, edition_id, person_ids):
+    r = admin.put(f"/api/admin/editions/{edition_id}/roster", json={"person_ids": list(person_ids)})
+    assert r.status_code == 200, r.get_json()
+    return r
+
+
+def roster_ids(con, edition_id):
+    return {r[0] for r in con.execute("SELECT person_id FROM edition_people WHERE edition_id = ?", (edition_id,))}

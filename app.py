@@ -1,6 +1,5 @@
 """The Flask object, hooks and routes. Route-free logic lives in sibling modules that take a sqlite3.Connection."""
 import os
-import re
 from functools import wraps
 from urllib.parse import urlsplit
 
@@ -9,6 +8,7 @@ from werkzeug.exceptions import HTTPException
 
 import access
 import db as database
+import exchanges
 import settings
 from common import ApiError, json_body, text
 
@@ -87,7 +87,7 @@ def robots():
 NO_MATCH = "That password didn't match."
 TOO_MANY = "Too many tries. Wait a few minutes."
 MAX_PASSWORD = 128
-SLUG = re.compile(r"[a-z0-9][a-z0-9-]{0,39}")
+SLUG = exchanges.SLUG
 
 
 @app.after_request
@@ -205,11 +205,112 @@ def session_info():
     return jsonify(app_name=settings.APP_NAME, admin=access.is_admin(request))
 
 
+# -- admin structure: exchanges, people, editions, roster, profile fields (rules in exchanges.py)
 @app.get("/api/admin/exchanges")
 @admin_required
 def admin_exchanges():
-    """Stub until Task 4 (exchanges.py) replaces it."""
-    return jsonify([])
+    return jsonify(exchanges.list_exchanges(db()))
+
+
+@app.post("/api/admin/exchanges")
+@admin_required
+def admin_exchange_create():
+    d = json_body()
+    xid = exchanges.create_exchange(
+        db(), text(d, "slug", 40, required=True), text(d, "name", exchanges.MAX_NAME, required=True),
+        text(d, "password", MAX_PASSWORD, required=True),
+        **{k: d[k] for k in ("accent_color", "sort_order") if k in d})
+    return jsonify(id=xid), 201
+
+
+@app.patch("/api/admin/exchanges/<int:xid>")
+@admin_required
+def admin_exchange_update(xid):
+    return jsonify(exchanges.update_exchange(db(), xid, json_body()))
+
+
+@app.post("/api/admin/exchanges/<int:xid>/link")
+@admin_required
+def admin_exchange_link(xid):
+    """Regenerates the share link and returns it. The scheme comes from the browser's Origin (behind the tunnel the
+    app itself sees http); guard_mutations already checked that Origin names this host."""
+    slug, token = exchanges.regenerate_link(db(), xid)
+    scheme = urlsplit(request.headers.get("Origin") or "").scheme
+    return jsonify(url=f"{scheme if scheme in ('http', 'https') else request.scheme}://{request.host}"
+                       f"/x/{slug}/join/{token}")
+
+
+@app.get("/api/admin/exchanges/<int:xid>/people")
+@admin_required
+def admin_people(xid):
+    return jsonify(exchanges.list_people(db(), xid))
+
+
+@app.post("/api/admin/exchanges/<int:xid>/people")
+@admin_required
+def admin_person_create(xid):
+    return jsonify(id=exchanges.add_person(db(), xid, json_body())), 201
+
+
+@app.patch("/api/admin/people/<int:pid>")
+@admin_required
+def admin_person_update(pid):
+    return jsonify(exchanges.update_person(db(), pid, json_body()))
+
+
+@app.get("/api/admin/exchanges/<int:xid>/editions")
+@admin_required
+def admin_editions(xid):
+    return jsonify(exchanges.list_editions(db(), xid))
+
+
+@app.post("/api/admin/exchanges/<int:xid>/editions")
+@admin_required
+def admin_edition_create(xid):
+    d = json_body()
+    copy_roster = d.get("copy_roster", False)
+    if not isinstance(copy_roster, bool):
+        raise ApiError(400, "copy_roster must be true or false.")
+    eid = exchanges.create_edition(db(), xid, d.get("year"), d.get("label"), copy_roster)
+    return jsonify(id=eid), 201
+
+
+@app.patch("/api/admin/editions/<int:eid>")
+@admin_required
+def admin_edition_update(eid):
+    return jsonify(exchanges.update_edition(db(), eid, json_body()))
+
+
+@app.put("/api/admin/editions/<int:eid>/roster")
+@admin_required
+def admin_roster(eid):
+    exchanges.set_roster(db(), eid, json_body().get("person_ids"))
+    return jsonify(ok=True)
+
+
+@app.get("/api/admin/exchanges/<int:xid>/fields")
+@admin_required
+def admin_fields(xid):
+    return jsonify(exchanges.list_fields(db(), xid))
+
+
+@app.post("/api/admin/exchanges/<int:xid>/fields")
+@admin_required
+def admin_field_create(xid):
+    return jsonify(id=exchanges.add_field(db(), xid, json_body())), 201
+
+
+@app.patch("/api/admin/fields/<int:fid>")
+@admin_required
+def admin_field_update(fid):
+    return jsonify(exchanges.update_field(db(), fid, json_body()))
+
+
+@app.put("/api/admin/exchanges/<int:xid>/fields/order")
+@admin_required
+def admin_fields_order(xid):
+    exchanges.order_fields(db(), xid, json_body().get("ids"))
+    return jsonify(ok=True)
 
 
 @app.get("/api/x/<slug>")
