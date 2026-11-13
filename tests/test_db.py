@@ -22,11 +22,13 @@ def test_migrate_is_idempotent(con):
 
 
 def test_pairing_constraints(con, seed):                     # seed: one exchange, edition, people a, b, c
-    con.execute("INSERT INTO pairing VALUES (?,?,?)", (seed.ed, seed.a, seed.b))
+    ins = "INSERT INTO pairing VALUES (?,?,?)"
+    con.execute(ins, (seed.ed, seed.a, seed.b))
     with pytest.raises(sqlite3.IntegrityError):
-        con.execute("INSERT INTO pairing VALUES (?,?,?)", (seed.ed, seed.c, seed.b))   # recipient twice
-    with pytest.raises(sqlite3.IntegrityError):
-        con.execute("INSERT INTO pairing VALUES (?,?,?)", (seed.ed, seed.c, seed.c))   # self
+        con.execute(ins, (seed.ed, seed.a, seed.c))      # a giver twice
+    # A draft may hold what Mark paired refuses (pairings.problems names it).
+    con.execute(ins, (seed.ed, seed.c, seed.b))          # recipient twice
+    con.execute(ins, (seed.ed, seed.b, seed.b))          # self
 
 
 def test_healthz_is_open_and_bare(client):
