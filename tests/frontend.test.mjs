@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { cleanMe, meCookie, parseMe } from "../static/js/whoami.js";
 import { dayLabel, daysLabel, esc, eventDateLabel, hostLabel, inkFor, isStale, monthLabel, money, parseHash, validAccent } from "../static/js/core.js";
 
 test("esc", () => assert.equal(esc(`<a href="x">'&`), "&lt;a href=&quot;x&quot;&gt;&#39;&amp;"));
@@ -70,4 +71,28 @@ test("eventDateLabel reads a calendar day", () => {
   assert.equal(eventDateLabel("2026-12-24"), "Thu, Dec 24");
   assert.equal(eventDateLabel(null), "");
   assert.equal(eventDateLabel("12/24"), "");
+});
+
+test("who am I: the cookie round-trips per exchange", () => {
+  const set = meCookie("cousins", { person_id: 3, name: "Sam" }, true);
+  assert.match(set, /^gx_me_cousins=[^;]+; Path=\/; Max-Age=34560000; SameSite=Lax; Secure$/);
+  const jar = `gx_me_adults=x; ${set.split(";")[0]}; other=1`;
+  assert.deepEqual(parseMe(jar, "cousins"), { person_id: 3, name: "Sam" });
+  assert.equal(parseMe(jar, "adults"), null);         // not JSON
+  assert.equal(parseMe(jar, "family"), null);         // not set
+  assert.doesNotMatch(meCookie("cousins", { person_id: 3, name: "Sam" }, false), /Secure/);
+});
+
+test("who am I: just looking keeps a name and no person", () => {
+  const set = meCookie("cousins", { person_id: null, name: "  Pat; <b>  " }, false).split(";")[0];
+  assert.deepEqual(parseMe(set, "cousins"), { person_id: null, name: "Pat; <b>" });
+});
+
+test("who am I: bad values are refused", () => {
+  for (const bad of [null, {}, { person_id: null, name: " " }, { person_id: "3", name: "Sam" }, { person_id: 0, name: "Sam" },
+    { person_id: 1.5, name: "Sam" }, { person_id: 3 }]) {
+    assert.equal(cleanMe(bad), null, JSON.stringify(bad));
+  }
+  assert.equal(cleanMe({ person_id: null, name: "x".repeat(80) }).name.length, 60);
+  assert.match(meCookie("cousins", null, false), /^gx_me_cousins=; Path=\/; Max-Age=0;/);
 });
