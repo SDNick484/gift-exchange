@@ -109,11 +109,20 @@ def admin(client):
 
 @pytest.fixture
 def x(con):
-    """An exchange 'family' with people x.alex, x.sam, x.jordan (ids) and no edition. x.id is the exchange id."""
+    """An exchange 'family' (x.slug, password 'pw12') with people x.alex, x.sam, x.jordan (ids) and no edition.
+    x.id is the exchange id."""
     xid = mk_exchange(con, "family", "pw12")
     ids = {n: con.execute("INSERT INTO person (exchange_id, name) VALUES (?, ?)", (xid, n.title())).lastrowid
            for n in ("alex", "sam", "jordan")}
-    return types.SimpleNamespace(id=xid, **ids)
+    return types.SimpleNamespace(id=xid, slug="family", **ids)
+
+
+@pytest.fixture
+def family(x):
+    """A second client with no admin cookie that has typed the exchange's password: what a relative's phone is."""
+    c = exchange.app.test_client()
+    assert c.post("/api/unlock", json={"password": "pw12"}, headers=mut()).status_code == 200
+    return c
 
 
 def mk_edition(admin, exchange_id, year, **extra):
@@ -131,3 +140,39 @@ def put_roster(admin, edition_id, person_ids):
 
 def roster_ids(con, edition_id):
     return {r[0] for r in con.execute("SELECT person_id FROM edition_people WHERE edition_id = ?", (edition_id,))}
+
+
+def paired_ready_edition(admin, x, year=2026):
+    """An open edition for `year` with the roster alex, sam, jordan and no pairings. Returns its id."""
+    e = mk_edition(admin, x.id, year)
+    put_roster(admin, e, [x.alex, x.sam, x.jordan])
+    return e
+
+
+def save_pairs(admin, edition_id, pairs):
+    """PUT the draft: pairs is a list of (giver_id, recipient_id or None)."""
+    r = admin.put(f"/api/admin/editions/{edition_id}/pairings",
+                  json={"pairs": [{"giver_id": g, "recipient_id": t} for g, t in pairs]})
+    assert r.status_code == 200, r.get_json()
+    return r
+
+
+def full_cycle(admin, edition_id, ids):
+    """Save a complete draft where each person in ids gives to the next, the last to the first."""
+    return save_pairs(admin, edition_id, [(g, ids[(i + 1) % len(ids)]) for i, g in enumerate(ids)])
+
+
+def paired_edition(admin, x, year, pairs):
+    """An edition for `year` (roster alex, sam, jordan) with these (giver, recipient) pairs saved and marked paired."""
+    e = paired_ready_edition(admin, x, year)
+    save_pairs(admin, e, pairs)
+    r = admin.post(f"/api/admin/editions/{e}/mark-paired", json={})
+    assert r.status_code == 200, r.get_json()
+    return e
+
+
+def set_household(admin, person_ids, label):
+    """Give each of these people the same household label."""
+    for pid in person_ids:
+        r = admin.patch(f"/api/admin/people/{pid}", json={"household": label})
+        assert r.status_code == 200, r.get_json()

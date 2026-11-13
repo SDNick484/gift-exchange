@@ -54,13 +54,13 @@ CREATE TABLE IF NOT EXISTS participant (
   updated_at INTEGER NOT NULL,
   updated_by TEXT NOT NULL DEFAULT '',
   PRIMARY KEY (edition_id, person_id));
+-- A draft may hold a doubled recipient or a self-pair so that pairings.problems can name it.
+-- pairings.mark_paired is the guard: it refuses both, so a paired edition is a complete permutation.
 CREATE TABLE IF NOT EXISTS pairing (
   edition_id INTEGER NOT NULL REFERENCES edition(id) ON DELETE CASCADE,
   giver_id INTEGER NOT NULL REFERENCES person(id),
   recipient_id INTEGER REFERENCES person(id),
-  UNIQUE (edition_id, giver_id),
-  UNIQUE (edition_id, recipient_id),
-  CHECK (giver_id <> recipient_id));
+  UNIQUE (edition_id, giver_id));
 CREATE TABLE IF NOT EXISTS wish_item (
   id INTEGER PRIMARY KEY,
   edition_id INTEGER NOT NULL REFERENCES edition(id) ON DELETE CASCADE,

@@ -9,6 +9,7 @@ from werkzeug.exceptions import HTTPException
 import access
 import db as database
 import exchanges
+import pairings
 import settings
 from common import ApiError, json_body, text
 
@@ -313,12 +314,62 @@ def admin_fields_order(xid):
     return jsonify(ok=True)
 
 
+def _is_id(value):
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _pairs_body(data):
+    """The PUT body's pairs as [(giver_id, recipient_id or None)]; a missing recipient_id is a draft row."""
+    raw = data.get("pairs")
+    if not isinstance(raw, list):
+        raise ApiError(400, "pairs must be a list.")
+    out = []
+    for p in raw:
+        if not isinstance(p, dict) or not _is_id(p.get("giver_id")):
+            raise ApiError(400, "Each pair needs a giver_id.")
+        recipient = p.get("recipient_id")
+        if recipient is not None and not _is_id(recipient):
+            raise ApiError(400, "recipient_id must be a person id or null.")
+        out.append((p["giver_id"], recipient))
+    return out
+
+
+@app.get("/api/admin/editions/<int:eid>/pairings")
+@admin_required
+def admin_pairings(eid):
+    return jsonify(pairings.overview(db(), eid))
+
+
+@app.put("/api/admin/editions/<int:eid>/pairings")
+@admin_required
+def admin_pairings_save(eid):
+    pairings.save_draft(db(), eid, _pairs_body(json_body()))
+    return jsonify(ok=True)
+
+
+@app.post("/api/admin/editions/<int:eid>/mark-paired")
+@admin_required
+def admin_mark_paired(eid):
+    pairings.mark_paired(db(), eid)
+    return jsonify(ok=True)
+
+
+@app.post("/api/admin/editions/<int:eid>/unpair")
+@admin_required
+def admin_unpair(eid):
+    pairings.unpair(db(), eid)
+    return jsonify(ok=True)
+
+
 @app.get("/api/x/<slug>")
 @exchange_required
 def exchange_home(slug):
-    """Minimal until Tasks 5 and 6 fill in the edition, people and pairings."""
+    """Minimal until Task 6 fills in the edition and people. pairings is the current edition's list, or null while
+    the names aren't drawn yet (no edition, or one still open): the family never sees a draft, even with an admin cookie."""
     x = g.exchange
-    return jsonify(exchange={"slug": x["slug"], "name": x["name"], "accent_color": x["accent_color"]})
+    edition = exchanges.current_edition(db(), x["id"])
+    shown = pairings.visible(db(), edition["id"], admin=False) if edition else None
+    return jsonify(exchange={"slug": x["slug"], "name": x["name"], "accent_color": x["accent_color"]}, pairings=shown)
 
 
 @app.get("/healthz")
