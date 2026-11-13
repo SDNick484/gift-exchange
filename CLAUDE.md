@@ -51,14 +51,14 @@ before it sees them.
 ```
 app.py            Flask object, before/after hooks (mutation guard, security headers, cookie sliding), error handlers, the
                   exchange_required/admin_required decorators, every route (so far: /healthz, /robots.txt, unlock, join
-                  link, admin login/logout, /api/session, /api/exchanges; stubs GET /api/admin/exchanges (Task 4) and
-                  GET /api/x/<slug> (Tasks 5, 6)), app.db(), init_db()
+                  link, admin login/logout, /api/session, /api/exchanges, the /api/admin/ structure routes; stub GET
+                  /api/x/<slug> (Tasks 5, 6)), app.db(), init_db()
 manage.py         host chores: `hash-password`
 settings.py       environment config, read once at import (DATA_DIR, EXCHANGE_PORT, APP_NAME, ADMIN_PASSWORD_HASH, SECRET_KEY)
 db.py             SCHEMA, SCHEMA_VERSION, connect(), transaction(), migrate()
 common.py         ApiError, json_body, text, parse_cents, clean_url, now, today
 access.py         password hashing, unlock (option C), share links, gx_access/gx_admin cookies, admin session, throttle
-exchanges.py      exchanges, editions, people, roster, profile fields                     (Task 4)
+exchanges.py      exchanges, editions, people, roster, profile fields, current_edition
 pairings.py       draft save, validation, warnings, visibility                            (Task 5)
 lists.py          participant details, profile values, wish items, versions               (Task 6)
 static/           robots.txt (Task 2); index.html, style.css, manifest.json, icon.svg, static/js/ (Task 7)
@@ -90,3 +90,10 @@ Later modules are listed so the layout is known; add each to this file when it l
   the last 600 s and the newest is under 300 s old; throttled attempts get 429 and aren't recorded; success clears.
 - Routes for an exchange use `@exchange_required` (view gets `slug`; the row is `g.exchange`); admin routes use
   `@admin_required`. Both sit under the `@app.get/post` line.
+- Admin structure (`exchanges.py`; every `/api/admin/` route is `@admin_required`): creates return 201 `{"id"}`,
+  PATCH returns the row, PUT returns `{"ok": true}`. A new exchange is seeded with `DEFAULT_FIELDS`. Slugs match
+  `[a-z0-9][a-z0-9-]{0,39}` and `admin`, `api`, `x`, `static` are reserved. An edition can't be set to `paired`
+  through PATCH (Mark paired, Task 5, is the only way in). Text over its limit is 400, never cut. A roster change or
+  a deactivation that would orphan a pairing is 409 `Remove their pairing first: <names>.`, where a pairing names a
+  person as giver or recipient, draft rows included; deactivation only checks editions that aren't `closed`. The
+  share link comes back from `POST /api/admin/exchanges/<id>/link` (regenerates), built from the request's Origin.
