@@ -9,7 +9,7 @@ keeps per-person sizes, favorites and wishlists, behind one shared password. Spe
 
 ```
 python -m pytest -q
-node --test tests/                                  # once tests/*.test.mjs exist
+node --test tests/                                  # tests/frontend.test.mjs: the DOM-free helpers in static/js/
 for f in static/js/*.js; do node --check "$f"; done
 ruff check
 python3 app.py                                      # dev server on 127.0.0.1:8770
@@ -50,7 +50,7 @@ before it sees them.
 
 ```
 app.py            Flask object, before/after hooks (mutation guard, security headers, cookie sliding), error handlers, the
-                  exchange_required/admin_required decorators, every route (so far: /healthz, /robots.txt, unlock, join
+                  exchange_required/admin_required decorators, every route (so far: /, /manifest.json, /healthz, /robots.txt, unlock, join
                   link, admin login/logout, /api/session, /api/exchanges, the /api/admin/ structure and pairing routes,
                   the family routes under /api/x/<slug>), app.db(), init_db()
 manage.py         host chores: `hash-password`
@@ -61,8 +61,12 @@ access.py         password hashing, unlock (option C), share links, gx_access/gx
 exchanges.py      exchanges, editions, people, roster, profile fields, current_edition
 pairings.py       draft save, problems, warnings, Mark paired, Unpair, visibility
 lists.py          participant pages, details, profile values, wish items, version checks, scoping helpers
-static/           robots.txt (Task 2); index.html, style.css, manifest.json, icon.svg, static/js/ (Task 7)
-tests/            conftest.py + one test file per module
+static/           index.html (the shell; GET / fills in __APP_NAME__), style.css, manifest.json (GET /manifest.json sets
+                  name and short_name), icon.svg, robots.txt
+static/js/        hash-routed ES modules, no build step: main.js (router, header), core.js (esc and formatting, no DOM
+                  at import), api.js (get/send)
+tests/            conftest.py + one test file per module; test_frontend.py (shell, CSP and escaping scans over static/),
+                  frontend.test.mjs (node --test)
 installer/ deploy/ ops/                                                                   (Task 8)
 ```
 
@@ -133,3 +137,15 @@ Later modules are listed so the layout is known; add each to this file when it l
   - Closed editions: details and items are 423 `This year is closed.`; profile values are person-level and stay
     editable. Links go through `clean_url` (review focus 4). `updated_by` (60) is required on details, profile and
     item add/edit; delete (`{version}`) and reorder (`{edition_id, ids}`) take none.
+- Frontend (`static/js/`, Task 7): native ES modules, hash routes, `static/js/package.json` is `{"type": "module"}`.
+  - Escaping: markup is built in template literals whose every `${...}` is exactly one call to `esc`, `money`,
+    `daysLabel`, `monthLabel` or a `render*` function, never in an unquoted attribute; `innerHTML` is only ever
+    assigned a template literal, `""` or a `render*` call. `tests/test_frontend.py` scans every module for this, and
+    it doesn't parse regex literals: keep quote characters and backticks out of them (`\x22`, `\x27`).
+  - CSP holds by construction: no inline `<script>`/`<style>`, no `style="..."` or `on*=` in markup strings, no
+    `.onclick =` (use `addEventListener`). The exchange's `accent_color` reaches CSS only through
+    `core.applyAccent`, which checks `^#[0-9a-fA-F]{6}$` first (CSSOM `setProperty` is allowed by the CSP).
+  - No `window.confirm` or `alert` (the test greps for `confirm(` and `alert(`): deletes use an inline "Delete? Yes / No".
+  - `core.js` touches no `document`/`window` at import so `node --test` can load it.
+  - `document.title` is set only in `main.js`, from `/api/session`'s `app_name`.
+  - Links out are `target="_blank" rel="noopener noreferrer"` with the text `Open link · <hostLabel>` (`core.renderLink`).

@@ -1,0 +1,185 @@
+/* Phone-first, one column, for relatives of every age: an 18px body, tap targets of at least 48px, high contrast,
+   plain words. The exchange's accent colour arrives as --accent (set from JS through the CSSOM after a #rrggbb check:
+   the Content-Security-Policy allows no inline style). */
+:root {
+  --bg: #fbf8f2;
+  --surface: #ffffff;
+  --ink: #15191a;
+  --muted: #4a5250;
+  --line: #cfc8bb;
+  --accent: #1d4f3c;
+  --accent-ink: #ffffff;
+  --link: #0a4a86;
+  --danger: #a3172f;
+  --warn-bg: #fff4d6;
+  --warn-line: #b78300;
+  --error-bg: #fde8eb;
+  --ok-bg: #e6f4ec;
+  --focus: #0b57d0;
+  --radius: 12px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111414;
+    --surface: #1b1f1f;
+    --ink: #f2efe8;
+    --muted: #b9c0bd;
+    --line: #3a4240;
+    --link: #9cc8ff;
+    --danger: #ff8597;
+    --warn-bg: #3a2f10;
+    --warn-line: #e0b04a;
+    --error-bg: #3d1a20;
+    --ok-bg: #16301f;
+    --focus: #8ab4ff;
+    color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font: 18px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  padding-bottom: calc(48px + env(safe-area-inset-bottom));
+  -webkit-text-size-adjust: 100%;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+a { color: var(--link); text-underline-offset: 3px; }
+[hidden] { display: none !important; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+h1 { margin: 0; font-size: 1.6rem; line-height: 1.2; }
+h2 { margin: 0 0 10px; font-size: 1.25rem; }
+h3 { margin: 0 0 6px; font-size: 1.05rem; }
+p { margin: 0 0 10px; }
+.muted { color: var(--muted); }
+.small { font-size: .9rem; }
+.loading { color: var(--muted); padding: 24px 0; }
+
+/* header */
+.top {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: calc(8px + env(safe-area-inset-top)) 16px 8px; max-width: 720px; margin: 0 auto;
+}
+.brand, .top-link {
+  display: inline-flex; align-items: center; min-height: 48px; font-weight: 700; color: var(--ink); text-decoration: none;
+}
+.brand { font-size: 1.15rem; }
+.top-link { padding: 0 8px; text-decoration: underline; }
+
+main { max-width: 720px; margin: 0 auto; padding: 0 16px; }
+.view { display: grid; gap: 16px; }
+
+/* blocks */
+.card {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px;
+  display: grid; gap: 10px;
+}
+.card > * { margin: 0; }
+.head { border-top: 6px solid var(--accent); }
+.facts { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--ink); font-weight: 600; }
+.rules, .about { white-space: pre-line; overflow-wrap: anywhere; }
+.back { display: inline-flex; align-items: center; min-height: 48px; font-weight: 600; }
+.notice { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
+.notice.error { background: var(--error-bg); border-color: var(--danger); }
+.who { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; color: var(--muted); }
+.who strong { color: var(--ink); }
+
+/* the "You're getting" banner */
+.banner {
+  background: var(--accent); color: var(--accent-ink); border-radius: var(--radius); padding: 16px;
+  display: grid; gap: 8px;
+}
+.banner .big { font-size: 1.6rem; font-weight: 800; letter-spacing: .02em; }
+.banner a { color: var(--accent-ink); font-weight: 700; }
+
+/* lists of rows */
+.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.rows > li { border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; background: var(--surface); }
+.rows > li.link-row { padding: 0; }
+.link-row > a {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 56px; padding: 10px 14px;
+  color: var(--ink); text-decoration: none;
+}
+.link-row > a .go { color: var(--link); font-weight: 700; white-space: nowrap; text-decoration: underline; }
+.pairs { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.pairs li { padding: 6px 0; border-bottom: 1px solid var(--line); }
+.pairs li:last-child { border-bottom: 0; }
+.title { font-weight: 700; overflow-wrap: anywhere; }
+.note { overflow-wrap: anywhere; white-space: pre-line; }
+
+/* the basics */
+.basics { margin: 0; display: grid; gap: 10px; }
+.basics > div { display: grid; gap: 2px; }
+.basics dt { font-weight: 700; }
+.basics dd { margin: 0; overflow-wrap: anywhere; white-space: pre-line; }
+.basics .when { color: var(--muted); font-size: .9rem; }
+.basics .stale dd, .basics .stale dt { opacity: .6; }
+.basics .stale .when { color: var(--danger); font-weight: 600; opacity: 1; }
+
+/* buttons */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 48px; min-width: 48px; padding: 8px 18px; border-radius: 10px;
+  border: 2px solid var(--accent); background: var(--surface); color: var(--ink);
+  font-weight: 700; text-decoration: none; cursor: pointer; text-align: center;
+}
+.btn.primary { background: var(--accent); color: var(--accent-ink); }
+.btn.danger { border-color: var(--danger); color: var(--danger); }
+.btn.danger.primary { background: var(--danger); color: #fff; }
+.btn.quiet { border-color: var(--line); }
+.btn.wide { width: 100%; }
+.btn:disabled { opacity: .5; cursor: default; }
+.btn-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.linkish {
+  min-height: 48px; padding: 0 4px; border: 0; background: none; color: var(--link); text-decoration: underline;
+  font-weight: 600; cursor: pointer;
+}
+
+/* forms */
+form { display: grid; gap: 12px; }
+.field { display: grid; gap: 4px; }
+.field > span { font-weight: 700; }
+.field .hint { font-weight: 400; color: var(--muted); font-size: .9rem; }
+input[type=text], input[type=password], input[type=url], input[type=number], input[type=date], input[type=color],
+input:not([type]), select, textarea {
+  width: 100%; min-height: 48px; padding: 10px 12px; border: 2px solid var(--line); border-radius: 10px;
+  background: var(--surface);
+}
+input[type=color] { padding: 4px; max-width: 120px; }
+textarea { min-height: 120px; resize: vertical; }
+input:focus, select:focus, textarea:focus { border-color: var(--focus); outline: none; }
+.check { display: flex; align-items: center; gap: 10px; min-height: 48px; }
+.check input { width: 24px; height: 24px; }
+
+/* messages above a form, including the 409 conflict box */
+.msg { margin: 0; padding: 12px 14px; border-radius: 10px; border: 2px solid var(--line); }
+.msg.error { background: var(--error-bg); border-color: var(--danger); }
+.msg.warn { background: var(--warn-bg); border-color: var(--warn-line); }
+.msg.ok { background: var(--ok-bg); border-color: var(--accent); }
+.conflict { display: grid; gap: 10px; }
+.conflict .saved { background: var(--surface); border: 1px dashed var(--line); border-radius: 10px; padding: 10px 12px; }
+.problems { margin: 0; padding-left: 22px; }
+
+/* dialogs: who am I, the password when a save finds this phone signed out */
+dialog {
+  width: min(560px, calc(100vw - 24px)); max-height: calc(100vh - 24px); border: 0; border-radius: var(--radius);
+  padding: 20px 16px; background: var(--bg); color: var(--ink);
+}
+dialog::backdrop { background: rgba(0, 0, 0, .55); }
+.picker { display: grid; gap: 10px; }
+.picker .btn { width: 100%; justify-content: flex-start; font-size: 1.1rem; }
+
+/* admin */
+.admin-list > li { display: grid; gap: 10px; }
+details > summary { min-height: 48px; display: flex; align-items: center; font-weight: 700; cursor: pointer; }
+.share-link { font-family: ui-monospace, monospace; font-size: .9rem; }
+.pair-row { display: grid; gap: 4px; }
+.pair-row label { font-weight: 700; }
+
+.toast {
+  position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+  background: var(--ink); color: var(--bg); padding: 12px 20px; border-radius: 999px; font-weight: 700; z-index: 10;
+}

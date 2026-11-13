@@ -1,4 +1,6 @@
 """The Flask object, hooks and routes. Route-free logic lives in sibling modules that take a sqlite3.Connection."""
+import html
+import json
 import os
 import re
 from datetime import date
@@ -86,6 +88,23 @@ def http_error(e):
 @app.get("/robots.txt")
 def robots():
     return send_from_directory(app.static_folder, "robots.txt", mimetype="text/plain")
+
+
+@app.get("/")
+def index():
+    """The single page, with APP_NAME (escaped) as its title and home-screen name: the only names the shell carries.
+    Everything after this is hash-routed by static/js/main.js."""
+    with open(os.path.join(app.static_folder, "index.html"), encoding="utf-8") as f:
+        page = f.read().replace("__APP_NAME__", html.escape(settings.APP_NAME, quote=True))
+    return app.response_class(page, mimetype="text/html")
+
+
+@app.get("/manifest.json")
+def manifest():
+    """static/manifest.json with name and short_name set to APP_NAME."""
+    with open(os.path.join(app.static_folder, "manifest.json"), encoding="utf-8") as f:
+        data = {**json.load(f), "name": settings.APP_NAME, "short_name": settings.APP_NAME}
+    return app.response_class(json.dumps(data), mimetype="application/manifest+json")
 
 
 # -- access: exchange passwords, share links, the admin session (rules in access.py)
