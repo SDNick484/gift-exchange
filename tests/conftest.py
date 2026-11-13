@@ -29,6 +29,11 @@ import settings  # noqa: E402
 ORIGIN = "http://localhost"  # the Flask test client's host
 
 
+def mut(**extra):
+    """Headers a legitimate browser mutation carries: `client.post(url, json=..., headers=mut())`."""
+    return {"X-Exchange": "1", "Origin": ORIGIN, **extra}
+
+
 @pytest.fixture(autouse=True)
 def fresh_db():
     """Every test starts from an empty, migrated database."""
