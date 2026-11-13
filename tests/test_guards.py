@@ -25,12 +25,12 @@ def test_mutation_body_must_be_object(client):
 
 def test_same_origin_mutation_reaches_the_route(client):
     r = client.post("/api/unlock", json={"password": "x"}, headers=mut())
-    assert r.status_code == 403 and r.get_json() == {"error": "Forbidden"}                         # the Task 3 stub
+    assert r.status_code == 403 and r.get_json() == {"error": "That password didn't match."}       # past the guard
 
 
 def test_origin_scheme_may_differ_behind_a_proxy(client):
-    r = client.post("/api/unlock", json={}, headers=mut(Origin="https://localhost"))
-    assert r.status_code == 403 and r.get_json() == {"error": "Forbidden"}
+    r = client.post("/api/unlock", json={"password": "x"}, headers=mut(Origin="https://localhost"))
+    assert r.status_code == 403 and r.get_json() == {"error": "That password didn't match."}
 
 
 def test_guard_covers_every_mutating_method_under_api(client):
