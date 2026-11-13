@@ -48,15 +48,15 @@ before it sees them.
 ## Layout
 
 ```
-app.py            Flask object, before/after hooks, every route (so far: /healthz, app.db(), init_db())
+app.py            Flask object, before/after hooks (mutation guard, security headers), error handlers, every route (so far: /healthz, /robots.txt, a stub POST /api/unlock until Task 3, app.db(), init_db())
 settings.py       environment config, read once at import (DATA_DIR, EXCHANGE_PORT, APP_NAME, ADMIN_PASSWORD_HASH, SECRET_KEY)
 db.py             SCHEMA, SCHEMA_VERSION, connect(), transaction(), migrate()
-common.py         ApiError, json_body, text, parse_cents, clean_url, now, today          (Task 2)
+common.py         ApiError, json_body, text, parse_cents, clean_url, now, today
 access.py         password hashing, unlock, share links, cookies, admin session, throttle (Task 3)
 exchanges.py      exchanges, editions, people, roster, profile fields                     (Task 4)
 pairings.py       draft save, validation, warnings, visibility                            (Task 5)
 lists.py          participant details, profile values, wish items, versions               (Task 6)
-static/           index.html, style.css, manifest.json, icon.svg, robots.txt; static/js/ (Task 7)
+static/           robots.txt (Task 2); index.html, style.css, manifest.json, icon.svg, static/js/ (Task 7)
 tests/            conftest.py + one test file per module
 installer/ deploy/ ops/                                                                   (Task 8)
 ```
@@ -71,4 +71,4 @@ Later modules are listed so the layout is known; add each to this file when it l
   the per-year roster; timestamps are integer epoch seconds; `participant` rows are created lazily on first save.
 - `SECRET_KEY` comes from the environment, else `DATA_DIR/secret.key` (32 random bytes, mode 0600, created on first start).
 - Tests: `tests/conftest.py` sets the environment before importing `app`, gives every test a fresh database, and offers
-  the fixtures `client`, `con` and `seed` (one exchange, one edition, people a, b, c). Add shared helpers there.
+  the fixtures `client`, `con` and `seed` (one exchange, one edition, people a, b, c), plus `mut(**extra)` for the headers every mutation needs (`X-Exchange: 1`, same-origin `Origin`). Add shared helpers there.
