@@ -1,0 +1,3 @@
+# Runtime. On the Alpine container these come from apk, never pip: py3-flask py3-gunicorn
+flask>=3.0
+gunicorn>=21
