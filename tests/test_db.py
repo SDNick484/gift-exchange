@@ -13,12 +13,41 @@ def test_migrate_creates_every_table(con):
     names = {r["name"] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert {"meta","exchange","edition","person","edition_people","participant","pairing",
             "wish_item","profile_field","profile_value","login_failure"} <= names
-    assert con.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0] == "1"
+    assert con.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0] == "2"
 
 
 def test_migrate_is_idempotent(con):
     db.migrate(con); db.migrate(con)
     assert con.execute("SELECT COUNT(*) FROM meta WHERE key='schema_version'").fetchone()[0] == 1
+
+
+def test_v1_database_upgrades_to_v2_keeping_its_rows(tmp_path):
+    path = str(tmp_path / "v1.db")
+    c = db.connect(path)
+    with db.transaction(c):                       # a database as the v1 release made it
+        db.MIGRATIONS[1](c)
+        c.execute("INSERT INTO meta (key, value) VALUES ('schema_version', '1')")
+    c.execute("INSERT INTO exchange (id, slug, name, password_hash, link_token) VALUES (1, 'family', 'Family', 'h', 't')")
+    c.execute("INSERT INTO edition (id, exchange_id, label, year, created_at) VALUES (1, 1, '2026', 2026, 5)")
+    c.execute("INSERT INTO person (id, exchange_id, name) VALUES (1, 1, 'Sam')")
+    c.execute("INSERT INTO wish_item (id, edition_id, person_id, title, url, note, sort_order, version, created_at, "
+              "updated_at, updated_by) VALUES (7, 1, 1, 'Socks', 'https://example.com/s', 'blue', 3, 4, 5, 6, 'Alex')")
+    assert "deleted_at" not in {r["name"] for r in c.execute("PRAGMA table_info(wish_item)")}
+    db.migrate(c)
+    assert c.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0] == str(db.SCHEMA_VERSION) == "2"
+    row = c.execute("SELECT * FROM wish_item").fetchone()
+    assert dict(row) == {"id": 7, "edition_id": 1, "person_id": 1, "title": "Socks", "url": "https://example.com/s",
+                         "note": "blue", "sort_order": 3, "version": 4, "created_at": 5, "updated_at": 6,
+                         "updated_by": "Alex", "deleted_at": None}
+    before = [tuple(r) for r in c.execute("SELECT * FROM sqlite_master ORDER BY name")]
+    db.migrate(c)                                 # a second start changes nothing
+    assert [tuple(r) for r in c.execute("SELECT * FROM sqlite_master ORDER BY name")] == before
+    assert c.execute("SELECT COUNT(*) FROM wish_item").fetchone()[0] == 1
+    c.close()
+
+
+def test_fresh_database_has_deleted_at(con):
+    assert "deleted_at" in {r["name"] for r in con.execute("PRAGMA table_info(wish_item)")}
 
 
 def test_pairing_constraints(con, seed):                     # seed: one exchange, edition, people a, b, c

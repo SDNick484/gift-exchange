@@ -24,11 +24,12 @@ app = Flask(__name__, static_folder=os.path.join(BASE, "static"), static_url_pat
 
 
 def init_db():
-    """Create DATA_DIR and bring the database up to the current schema. Runs at import, so at every start."""
+    """Create DATA_DIR, bring the database up to the current schema and purge items deleted over a day ago. Runs at import, so at every start."""
     os.makedirs(settings.DATA_DIR, exist_ok=True)
     con = database.connect(settings.DB_PATH)
     try:
         database.migrate(con)
+        lists.purge_deleted(con)
     finally:
         con.close()
 

@@ -355,3 +355,16 @@ def test_out_of_range_and_odd_ids_are_404_or_400_never_500(family, fx):
     a = add_item(family, fx, fx.sam, "A")
     assert family.put(f"{base}/people/{fx.sam}/items/order",
                       json={"edition_id": fx.edition, "ids": [a, huge]}).status_code == 400
+
+
+# ---------------------------------------------------------------- schema v2: soft-deleted items
+
+
+def test_start_up_purges(family, fx, clock):
+    import app as a_
+    import common
+    i = add_item(family, fx, fx.sam, "Old")
+    fx.con.execute("UPDATE wish_item SET deleted_at = ? WHERE id = ?", (common.now(), i))
+    clock.advance(86401)
+    a_.init_db()
+    assert fx.con.execute("SELECT COUNT(*) FROM wish_item").fetchone()[0] == 0

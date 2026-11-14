@@ -20,6 +20,7 @@ from db import transaction
 
 STALE = "Someone else just changed this list. Reload to see it."
 CLOSED = "This year is closed."
+PURGE_AFTER = 86400  # seconds a deleted item can still be restored
 MAX_ABOUT, MAX_TITLE, MAX_NOTE, MAX_VALUE, MAX_UPDATED_BY = 4000, 200, 1000, 500, 60
 
 
@@ -247,6 +248,13 @@ def delete_item(con, item_id: int, version: int) -> None:
         _open_item(con, item_id)
         if con.execute("DELETE FROM wish_item WHERE id = ? AND version = ?", (item_id, version)).rowcount != 1:
             raise _stale()
+
+
+def purge_deleted(con) -> int:
+    """Drop items soft-deleted more than PURGE_AFTER seconds ago (they can no longer be restored). Run at start-up."""
+    with transaction(con):
+        return con.execute("DELETE FROM wish_item WHERE deleted_at IS NOT NULL AND deleted_at <= ?",
+                           (common.now() - PURGE_AFTER,)).rowcount
 
 
 def reorder(con, edition_id: int, person_id: int, ids: list[int]) -> None:
