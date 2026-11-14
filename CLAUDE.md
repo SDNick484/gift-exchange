@@ -66,7 +66,8 @@ static/           index.html (the shell; GET / fills in __APP_NAME__), style.css
 static/js/        hash-routed ES modules, no build step: main.js (router, header), core.js (esc and formatting, no DOM
                   at import), api.js (get/send; a 403 `locked` fires the unlock box), unlock.js (#/, the password box),
                   whoami.js (gx_me_<slug> cookie and the "Which one are you?" picker), home.js (#/x/<slug>),
-                  person.js (#/x/<slug>/p/<pid>), admin.js (#/admin, #/admin/x/<id>)
+                  person.js (#/x/<slug>/p/<pid>), admin.js (#/admin, #/admin/x/<id>),
+                  admin-pairings.js (#/admin/e/<id>/pairings)
 tests/            conftest.py + one test file per module; test_frontend.py (shell, CSP and escaping scans over static/),
                   frontend.test.mjs (node --test)
 installer/ deploy/ ops/                                                                   (Task 8)

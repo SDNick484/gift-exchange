@@ -8,6 +8,7 @@ import {
   freshValues, lastText, lastUpdate, mergeFresh, profileBody, renderBasicsView, renderConflict, renderItemView, renderReloaded,
   savedRows, stamps,
 } from "../static/js/person.js";
+import { choicesFor, chosenOf, pairsBody, renderChecks, rosterOf } from "../static/js/admin-pairings.js";
 import { centsToText, moved, nextYear, renderAdminHome, rosterChoices } from "../static/js/admin.js";
 import { factsOf, ideasLabel, personHash, renderHome, youFirst, youreGetting } from "../static/js/home.js";
 import { dayLabel, daysLabel, esc, eventDateLabel, hostLabel, inkFor, isStale, monthLabel, money, parseHash, validAccent } from "../static/js/core.js";
@@ -236,4 +237,20 @@ test("admin: budget text, next year, roster choices, field order", () => {
 test("admin: exchange names are escaped", () => {
   const html = renderAdminHome([{ id: 1, slug: "x", name: "<b>Adults</b>", active: false }]);
   assert.ok(html.includes("&lt;b&gt;Adults&lt;/b&gt; (closed to the family)") && !html.includes("<b>"));
+});
+
+test("pairings: roster, choices and the draft body", () => {
+  const people = [{ id: 3, name: "jordan" }, { id: 1, name: "Alex" }, { id: 2, name: "Sam" }, { id: 9, name: "Off roster" }];
+  const roster = rosterOf(people, { person_ids: [1, 2, 3] });
+  assert.deepEqual(roster.map(p => p.name), ["Alex", "jordan", "Sam"]);
+  assert.deepEqual(choicesFor(roster[0], roster, undefined).map(c => c.label), ["Not entered yet", "jordan", "Sam"]);
+  assert.deepEqual(choicesFor(roster[0], roster, 1).map(c => c.label), ["Not entered yet", "Alex", "jordan", "Sam"]);
+  assert.deepEqual(chosenOf([{ giver_id: 1, recipient_id: 2 }, { giver_id: 2, recipient_id: null }]), { 1: 2 });
+  assert.deepEqual(pairsBody({ 1: "2", 2: "", 3: "1" }), [{ giver_id: 1, recipient_id: 2 }, { giver_id: 3, recipient_id: 1 }]);
+});
+
+test("pairings: problems and warnings are escaped", () => {
+  const html = renderChecks({ problems: ["<b>Sam</b> isn't getting a gift."], warnings: ["Alex had <i>Sam</i> last year too."] });
+  assert.ok(html.includes("&lt;b&gt;Sam&lt;/b&gt;") && html.includes("&lt;i&gt;Sam&lt;/i&gt;") && !html.includes("<b>Sam"));
+  assert.ok(renderChecks({ problems: [], warnings: [] }).includes("Everyone gives once and gets once."));
 });
