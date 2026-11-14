@@ -192,6 +192,7 @@ details > summary { min-height: 48px; display: flex; align-items: center; font-w
 .share-link { font-family: ui-monospace, monospace; font-size: .9rem; overflow-wrap: anywhere; }
 .pair-row { display: grid; gap: 4px; }
 .pair-row label { font-weight: 700; }
+.pair-line { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
 
 .toast {
   position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom)); transform: translateX(-50%);

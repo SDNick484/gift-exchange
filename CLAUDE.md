@@ -53,8 +53,8 @@ before it sees them.
 ```
 app.py            Flask object, before/after hooks (mutation guard, security headers, cookie sliding), error handlers, the
                   exchange_required/admin_required decorators, every route (so far: /, /manifest.json, /healthz, /robots.txt, unlock, join
-                  link, admin login/logout, /api/session, /api/exchanges, the /api/admin/ structure and pairing routes,
-                  the family routes under /api/x/<slug>), app.db(), init_db()
+                  link, admin login/logout, /api/session, /api/exchanges, the /api/admin/ structure, pairing and draw
+                  routes, the family routes under /api/x/<slug>), app.db(), init_db()
 manage.py         host chores: `hash-password`
 settings.py       environment config, read once at import (DATA_DIR, EXCHANGE_PORT, APP_NAME, ADMIN_PASSWORD_HASH, SECRET_KEY)
 db.py             SCHEMA, SCHEMA_VERSION, connect(), transaction(), migrate()
@@ -62,6 +62,7 @@ common.py         ApiError, json_body, text, parse_cents, clean_url, now, today
 access.py         password hashing, unlock (option C), share links, gx_access/gx_admin cookies, admin session, throttle
 exchanges.py      exchanges, editions, people, roster, profile fields, current_edition
 pairings.py       draft save, problems, warnings, Mark paired, Unpair, visibility
+draw.py           in-app draw: forbidden_pairs, draw (randomized backtracking), preview tokens, publish, exclusions
 lists.py          participant pages, details, profile values, wish items, version checks, scoping helpers
 static/           index.html (the shell; GET / fills in __APP_NAME__), style.css, manifest.json (GET /manifest.json sets
                   name and short_name), icon.svg, robots.txt
@@ -69,7 +70,7 @@ static/js/        hash-routed ES modules, no build step: main.js (router, header
                   at import), api.js (get/send; a 403 `locked` fires the unlock box), unlock.js (#/, the password box),
                   whoami.js (gx_me_<slug> cookie and the "Which one are you?" picker), home.js (#/x/<slug>),
                   person.js (#/x/<slug>/p/<pid>), admin.js (#/admin, #/admin/x/<id>),
-                  admin-pairings.js (#/admin/e/<id>/pairings)
+                  admin-pairings.js (#/admin/e/<id>/pairings), admin-draw.js (#/admin/e/<id>/draw)
 tests/            conftest.py + one test file per module; test_frontend.py (shell, CSP and escaping scans over static/),
                   frontend.test.mjs (node --test)
 installer/        setup-head.sh (the installer's text, with a __DEPLOY_DEFAULTS__ marker), build.sh (head + base64 tarball of
@@ -89,10 +90,15 @@ Later modules are listed so the layout is known; add each to this file when it l
   the per-year roster; timestamps are integer epoch seconds; `participant` rows are created lazily on first save.
 - The `pairing` table keeps only `UNIQUE(edition_id, giver_id)`: a draft can hold a doubled recipient or a self-pair so
   `pairings.problems` can name it, and `pairings.mark_paired` is the one guard that an edition is paired as a complete
-  permutation. Schema is v2 (see "Schema v2" below).
+  permutation. Schema is v3 (see "Schema v2" and "Schema v3" below).
 - Schema v2: `wish_item.deleted_at INTEGER` (nullable), added by `db._to_v2` with `ALTER TABLE ... ADD COLUMN` inside
   the migrate transaction. The v1 `SCHEMA` text is never edited (a deployed v1 database was made from it); a fresh
   database runs v1 then v2. `tests/test_db.py` upgrades a populated v1 database and checks the rows survive.
+- Schema v3 (`db._to_v3`, new tables only): `draw_exclusion (edition_id, a_id, b_id)` with `CHECK (a_id < b_id)` and
+  primary key on all three (one row per unordered pair, read both ways; every reference `ON DELETE CASCADE`), and
+  `draw_preview (token PRIMARY KEY, edition_id ON DELETE CASCADE, lookback, pairs /* JSON [[giver, recipient], ...] */,
+  created_at)`. `tests/test_db.py` upgrades a populated v2 database (every old row and table definition unchanged, a
+  second migrate a no-op) and a v1 database straight to v3.
 - `SECRET_KEY` comes from the environment, else `DATA_DIR/secret.key` (32 random bytes, mode 0600, created on first start).
 - Tests: `tests/conftest.py` sets the environment before importing `app`, gives every test a fresh database, and offers
   the fixtures `client`, `con`, `seed` (one exchange, one edition, people a, b, c) and `clock` (freezes `common.now`
@@ -138,6 +144,31 @@ Later modules are listed so the layout is known; add each to this file when it l
   - `visible(admin=False)` is `None` unless the edition is `paired` or `closed`. `GET /api/x/<slug>` returns
     `pairings` for the current edition with `admin=False` always: the family page never shows a draft, even to the
     admin. The front end shows "Names not drawn yet." for `null`.
+- Draw (`draw.py`; admin routes `POST /api/admin/editions/<id>/draw` `{lookback: 1..3 = 1, single_loop: bool = false}`,
+  `POST .../draw/publish` `{token}`, `GET/PUT .../exclusions` `{pairs: [[a, b], ...]}`, all `@admin_required`):
+  - Forbidden (`forbidden_pairs(con, edition_id, lookback)`, directed, roster members only): same household label
+    (trimmed, case-insensitive, non-empty), both ways; every pair of the newest `lookback` editions with an earlier
+    year (same exchange, any status, draft rows with no recipient skipped); **the reverse of every pair of the newest
+    earlier edition, whatever the look-back** (Alex had Sam last year, so Sam can't draw Alex; older reverses are
+    allowed); manual exclusions, both ways. `pairings.warnings()` is untouched by the reverse rule.
+  - `draw(people, forbidden, *, single_loop, rng)` never relaxes a rule. `Impossible` names a person by id
+    ("<id> has no one left they're allowed to draw.", "No one is allowed to draw <id>.", else "No draw keeps every
+    rule. Start with <id>, ..." for the person with the fewest allowed recipients, ties to the earliest in `people`);
+    the route swaps in the name via `Impossible.named(roster)` and returns 400. A bipartite-matching check (and, for
+    one loop, a reachability check) runs first; then MRV backtracking (loop: Warnsdorff order) capped at `MAX_STEPS`
+    (200,000). Ties and choices come from `rng`: the route passes `secrets.SystemRandom()`.
+  - Draw is 409 unless the edition is `open` with no `pairing` rows (a draft row with no recipient counts). A preview
+    writes nothing to `pairing` or `edition`; it goes in `draw_preview` (in the database, not memory: gunicorn has two
+    workers) with a `secrets.token_urlsafe(32)` token, good for `PREVIEW_SECONDS` (600) by `common.now()`, for its
+    edition only, and once. A new draw deletes the edition's older previews and every expired one. Publish: 404 no
+    edition; 400 a token unknown, used, replaced, expired or another edition's (that one stays good); then in the
+    same transaction 409 if the edition isn't open, has rows, its roster isn't the preview's givers, or a pair is now
+    forbidden (with the preview's look-back); then `pairings.save_draft_in_transaction` and
+    `mark_paired_in_transaction` (the `*_in_transaction` twins assume the caller's transaction).
+  - Exclusions: PUT replaces the set; both people on the roster (400 `<name> isn't on this edition's roster.`) and
+    different (400 `A pair needs two different people.`); duplicates either way round collapse. GET returns
+    `{"pairs": [{"a_id","a","b_id","b"}]}`, the name that sorts first as `a`, in name order. A roster change deletes
+    exclusions naming anyone dropped (it never blocks; coming back doesn't restore them).
 - Family lists (`lists.py`; routes under `/api/x/<slug>`, all `@exchange_required`):
   - Scoping: every person, item, edition or field id that isn't in this exchange is 404, and so is someone off the
     edition's roster for that edition (page, details, items, reorder). Routes call `lists.edition_of`, `person_of`,
@@ -174,6 +205,10 @@ Later modules are listed so the layout is known; add each to this file when it l
   - Links out are `target="_blank" rel="noopener noreferrer"` with the text `Open link · <hostLabel>` (`core.renderLink`).
   - Undo and bring-over (`person.js`): a delete shows "Deleted · Undo" in its own `[data-slot=undo]` for `UNDO_MS` (8 s),
     one line and timer per idea; "Bring over last year's items" sits under Add an idea and is hidden in a closed year.
+  - Draw screen (`admin-draw.js`, linked from the pairings screen): exclusions save on Add/Remove; a look-back select
+    (1 to 3, default 1) and a single-loop checkbox; the preview lists names with Redraw and Publish, and any change to
+    the rules or options drops it. Hidden with `drawBlocked(overview)`'s reason unless the year is open with no rows.
+    Publish goes back to `#/admin/e/<id>/pairings`.
   - Large text: `style.css` has no `nowrap` and no fixed wide boxes, children of grids/flex may shrink (`min-width: 0`)
     and long words and addresses wrap, so 200% zoom has no sideways scroll (`tests/test_frontend.py` guards the rules).
   - PWA: `manifest.json` is `display: standalone` with `static/icon.svg` listed at 192x192, 512x512 and `any`

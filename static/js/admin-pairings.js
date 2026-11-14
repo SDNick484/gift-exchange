@@ -1,5 +1,6 @@
 // #/admin/e/<edition id>/pairings  Typing in the bowl's result: one dropdown per giver, what still stops Mark paired
-// (problems, by name) and what is only worth a look (warnings), Save draft, Mark paired and Unpair.
+// (problems, by name) and what is only worth a look (warnings), Save draft, Mark paired and Unpair, and a link to the
+// in-app draw (admin-draw.js) while the year is open with nothing entered.
 // A half-entered draft is saved as it stands, so nothing typed in is lost; the family sees nothing until Mark paired.
 import { get, send } from "./api.js";
 import { esc, renderDisabled, renderError, renderOptions, toast } from "./core.js";
@@ -26,6 +27,15 @@ export function pairsBody(values) {
   return Object.entries(values).filter(([, r]) => r !== "").map(([g, r]) => ({ giver_id: Number(g), recipient_id: Number(r) }));
 }
 
+// Why the in-app draw (#/admin/e/<id>/draw) can't run for this overview, or "" when it can: it needs an open year with
+// no names entered, not even a half-entered draft.
+export function drawBlocked(o) {
+  if (o.status === "paired") return "The names are already marked paired.";
+  if (o.status !== "open") return "This year is closed.";
+  if ((o.pairs ?? []).length) return "Names are already entered for this year. To draw instead, set everyone back to Not entered yet and save.";
+  return "";
+}
+
 // ---------------------------------------------------------------- markup
 const STATUS_NOTE = {
   open: "Type in the bowl's result. Save draft keeps what you've entered, even half of it. The family sees nothing until you press Mark paired.",
@@ -47,6 +57,9 @@ const renderWarnings = warnings => (warnings.length
   ? `<div class="msg warn"><p><strong>Worth a look (these don't stop Mark paired):</strong></p><ul class="problems">${renderItems(warnings)}</ul></div>`
   : "");
 export const renderChecks = o => `${renderProblemList(o.problems)}${renderWarnings(o.warnings)}`;
+export const renderDrawLink = (eid, o) => (drawBlocked(o)
+  ? `<p class="small muted">In-app draw: ${esc(drawBlocked(o))}</p>`
+  : `<p><a class="btn" href="#/admin/e/${esc(eid)}/draw">Draw names in the app instead</a></p>`);
 const renderActions = status => {
   if (status === "open") return `<button class="btn" type="button" data-act="save-draft">Save draft</button><button class="btn primary" type="button" data-act="mark-paired">Mark paired</button>`;
   if (status === "paired") return `<button class="btn" type="button" data-act="unpair">Unpair</button>`;
@@ -63,14 +76,15 @@ export const renderScreen = (x, edition, roster, o) => `
     <form data-form="pairs" novalidate>${renderRows(roster, chosenOf(o.pairs), o.status !== "open")}</form>
     <div data-slot="problems">${renderChecks(o)}</div>
     <div class="btn-row">${renderActions(o.status)}</div>
-  </section>`;
+  </section>
+  <section class="card" data-slot="draw">${renderDrawLink(edition.id, o)}</section>`;
 
 const renderNotFound = () => `<div class="notice"><p>No such year.</p><p><a class="btn" href="#/admin">All exchanges</a></p></div>`;
 const renderNeedsAdmin = () => `<div class="notice"><p>Sign in as admin first.</p><p><a class="btn primary" href="#/admin">Admin sign-in</a></p></div>`;
 
 // ---------------------------------------------------------------- the screen
 // The exchange and edition an edition id belongs to (the admin API lists editions per exchange).
-async function findEdition(eid) {
+export async function findEdition(eid) {
   const list = await get("/api/admin/exchanges");
   const all = await Promise.all(list.map(x => get(`/api/admin/exchanges/${x.id}/editions`)));
   for (const [i, editions] of all.entries()) {
@@ -125,7 +139,10 @@ export async function render(ctx) {
     await send("PUT", `/api/admin/editions/${eid}/pairings`, { pairs: pairsBody(sent) });
     saved = JSON.stringify(sent);
   };
-  const showChecks = o => { view.querySelector("[data-slot=problems]").innerHTML = renderChecks(o); };
+  const showChecks = o => {
+    view.querySelector("[data-slot=problems]").innerHTML = renderChecks(o);
+    view.querySelector("[data-slot=draw]").innerHTML = renderDrawLink(eid, o);
+  };
 
   view.addEventListener("click", async e => {
     const btn = e.target.closest("button[data-act]");

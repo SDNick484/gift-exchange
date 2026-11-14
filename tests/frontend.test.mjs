@@ -8,7 +8,11 @@ import {
   freshValues, lastText, lastUpdate, mergeFresh, profileBody, renderBasicsView, renderConflict, renderItemView, renderReloaded,
   savedRows, stamps, UNDO_MS, renderUndo,
 } from "../static/js/person.js";
-import { choicesFor, chosenOf, pairsBody, renderChecks, rosterOf } from "../static/js/admin-pairings.js";
+import { choicesFor, chosenOf, drawBlocked, pairsBody, renderChecks, renderDrawLink, rosterOf } from "../static/js/admin-pairings.js";
+import {
+  drawBody, exclusionPairs, LOOKBACKS, pairProblem, personChoices, renderBlocked, renderExclusions, renderPreview, renderScreen as renderDrawScreen,
+  withoutIndex, withPair,
+} from "../static/js/admin-draw.js";
 import { centsToText, moved, nextYear, renderAdminHome, renderLogin, rosterChoices } from "../static/js/admin.js";
 import { ADMIN_SIGN_IN } from "../static/js/unlock.js";
 import { factsOf, ideasLabel, personHash, renderHome, youFirst, youreGetting } from "../static/js/home.js";
@@ -270,4 +274,54 @@ test("renderUndo says Deleted, offers Undo and escapes the title", () => {
   assert.match(html, /data-undo="7"/);
   assert.ok(!html.includes("<b>"));
   assert.equal(UNDO_MS, 8000);
+});
+
+// ---------------------------------------------------------------- the in-app draw (admin-draw.js)
+test("drawBlocked: only an open year with nothing entered can draw", () => {
+  assert.equal(drawBlocked({ status: "open", pairs: [] }), "");
+  assert.match(drawBlocked({ status: "open", pairs: [{ giver_id: 1, recipient_id: null }] }), /already entered/);
+  assert.match(drawBlocked({ status: "paired", pairs: [] }), /marked paired/);
+  assert.match(drawBlocked({ status: "closed", pairs: [] }), /closed/);
+});
+
+test("renderDrawLink links to the draw or says why not", () => {
+  assert.match(renderDrawLink(7, { status: "open", pairs: [] }), /href="#\/admin\/e\/7\/draw"/);
+  const no = renderDrawLink(7, { status: "closed", pairs: [] });
+  assert.doesNotMatch(no, /href=/);
+  assert.match(no, /closed/);
+});
+
+test("drawBody", () => {
+  assert.deepEqual(drawBody("2", true), { lookback: 2, single_loop: true });
+  assert.deepEqual(drawBody("", "on"), { lookback: 1, single_loop: false });
+  assert.deepEqual(LOOKBACKS.map(o => o.value), [1, 2, 3]);
+});
+
+test("exclusion bodies add and remove pairs", () => {
+  const list = [{ a_id: 1, a: "Alex", b_id: 2, b: "Sam" }, { a_id: 3, a: "Jordan", b_id: 4, b: "Riley" }];
+  assert.deepEqual(exclusionPairs(list), [[1, 2], [3, 4]]);
+  assert.deepEqual(withPair(list, 5, 1), [[1, 2], [3, 4], [5, 1]]);
+  assert.deepEqual(withoutIndex(list, 0), [[3, 4]]);
+  assert.equal(pairProblem(list, 0, 2), "Pick two people.");
+  assert.equal(pairProblem(list, 2, 2), "Pick two different people.");
+  assert.equal(pairProblem(list, 2, 1), "That pair is already on the list.");
+  assert.equal(pairProblem(list, 1, 3), "");
+});
+
+test("personChoices puts a blank first", () => {
+  assert.deepEqual(personChoices([{ id: 1, name: "Alex" }]), [{ value: "", label: "Choose someone" }, { value: 1, label: "Alex" }]);
+});
+
+test("draw markup escapes every name", () => {
+  const bad = "<img src=x onerror=1>";
+  const x = { id: 1, name: bad };
+  const edition = { id: 2, label: bad };
+  const roster = [{ id: 3, name: bad }];
+  const list = [{ a_id: 3, a: bad, b_id: 4, b: bad }];
+  for (const html of [renderExclusions(list), renderPreview({ preview: [{ giver: bad, recipient: bad }] }),
+    renderDrawScreen(x, edition, roster, list), renderBlocked(x, edition, bad)]) {
+    assert.doesNotMatch(html, /<img/);
+    assert.match(html, /&lt;img/);
+  }
+  assert.match(renderExclusions([]), /None yet/);
 });

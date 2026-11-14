@@ -7,7 +7,7 @@ Timestamps are integer epoch seconds; money is integer cents."""
 import sqlite3
 from contextlib import contextmanager
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 # Version 1 (a deployed database was created from this text: never edit it, add a step to MIGRATIONS instead).
 # Statements are separated by ";" and contain none themselves (no triggers): see _statements().
@@ -140,7 +140,27 @@ def _to_v2(con):
     con.execute("ALTER TABLE wish_item ADD COLUMN deleted_at INTEGER")
 
 
-MIGRATIONS = {1: _to_v1, 2: _to_v2}  # version -> step that brings version-1 up to it
+def _to_v3(con):
+    # The in-app draw (draw.py). Two new tables; no existing table or row is touched.
+    # draw_exclusion: "never pair A with B" for one edition, stored once as the ordered pair (a_id < b_id) and read
+    # both ways. draw_preview: a drawn result waiting for Publish, keyed by its token. It lives here, not in process
+    # memory, because gunicorn runs two workers: the preview and the publish may land on different ones.
+    con.execute("""CREATE TABLE draw_exclusion (
+  edition_id INTEGER NOT NULL REFERENCES edition(id) ON DELETE CASCADE,
+  a_id INTEGER NOT NULL REFERENCES person(id) ON DELETE CASCADE,
+  b_id INTEGER NOT NULL REFERENCES person(id) ON DELETE CASCADE,
+  CHECK (a_id < b_id),
+  PRIMARY KEY (edition_id, a_id, b_id))""")
+    con.execute("""CREATE TABLE draw_preview (
+  token TEXT PRIMARY KEY,
+  edition_id INTEGER NOT NULL REFERENCES edition(id) ON DELETE CASCADE,
+  lookback INTEGER NOT NULL,
+  pairs TEXT NOT NULL,
+  created_at INTEGER NOT NULL)""")
+    con.execute("CREATE INDEX draw_preview_edition ON draw_preview(edition_id)")
+
+
+MIGRATIONS = {1: _to_v1, 2: _to_v2, 3: _to_v3}  # version -> step that brings version-1 up to it
 
 
 def migrate(con):

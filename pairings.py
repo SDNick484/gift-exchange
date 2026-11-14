@@ -1,7 +1,8 @@
 """Pairings: draft entry, the checks behind Mark paired, warnings, and who may see the names.
 
 Route-free: every function takes a sqlite3.Connection (autocommit, see db.py) and raises common.ApiError for a bad
-request, so app.py's routes stay thin. Functions that write open their own `transaction(con)`.
+request, so app.py's routes stay thin. Functions that write open their own `transaction(con)`; their
+`*_in_transaction` twins do the same work inside a transaction the caller already holds (draw.publish uses them).
 
 Rules kept here:
 - The admin types names in from the bowl, so a draft may be partial or wrong (a giver with no recipient, a recipient
@@ -52,22 +53,27 @@ def save_draft(con, edition_id: int, pairs: list[tuple[int, int | None]]) -> Non
     partial or wrong on purpose (see the module docstring). Givers and recipients must be on the roster and a giver
     may appear once (400); an edition that isn't open is 409. Nothing changes on an error."""
     with transaction(con):
-        ed = _edition(con, edition_id)
-        if ed["status"] != "open":
-            raise _not_open(ed["status"])
-        roster = _roster(con, edition_id)
-        seen = set()
-        for giver, recipient in pairs:
-            for pid in (giver, recipient):
-                if pid is not None and pid not in roster:
-                    name = con.execute("SELECT name FROM person WHERE id = ?", (pid,)).fetchone()
-                    raise ApiError(400, f"{name[0] if name else 'That person'} isn't on this edition's roster.")
-            if giver in seen:
-                raise ApiError(400, f"{roster[giver]} is listed twice as a giver.")
-            seen.add(giver)
-        con.execute("DELETE FROM pairing WHERE edition_id = ?", (edition_id,))
-        con.executemany("INSERT INTO pairing (edition_id, giver_id, recipient_id) VALUES (?, ?, ?)",
-                        [(edition_id, g, r) for g, r in pairs])
+        save_draft_in_transaction(con, edition_id, pairs)
+
+
+def save_draft_in_transaction(con, edition_id: int, pairs: list[tuple[int, int | None]]) -> None:
+    """save_draft for a caller that already holds a transaction (and rolls it back on an error)."""
+    ed = _edition(con, edition_id)
+    if ed["status"] != "open":
+        raise _not_open(ed["status"])
+    roster = _roster(con, edition_id)
+    seen = set()
+    for giver, recipient in pairs:
+        for pid in (giver, recipient):
+            if pid is not None and pid not in roster:
+                name = con.execute("SELECT name FROM person WHERE id = ?", (pid,)).fetchone()
+                raise ApiError(400, f"{name[0] if name else 'That person'} isn't on this edition's roster.")
+        if giver in seen:
+            raise ApiError(400, f"{roster[giver]} is listed twice as a giver.")
+        seen.add(giver)
+    con.execute("DELETE FROM pairing WHERE edition_id = ?", (edition_id,))
+    con.executemany("INSERT INTO pairing (edition_id, giver_id, recipient_id) VALUES (?, ?, ?)",
+                    [(edition_id, g, r) for g, r in pairs])
 
 
 # ---------------------------------------------------------------- checking
@@ -124,13 +130,18 @@ def warnings(con, edition_id: int) -> list[str]:
 def mark_paired(con, edition_id: int) -> None:
     """Open to paired, when problems() is empty; otherwise 400 with every problem joined by '; '. Not open is 409."""
     with transaction(con):
-        ed = _edition(con, edition_id)
-        if ed["status"] != "open":
-            raise _not_open(ed["status"])
-        found = problems(con, edition_id)
-        if found:
-            raise ApiError(400, "; ".join(found))
-        con.execute("UPDATE edition SET status = 'paired' WHERE id = ?", (edition_id,))
+        mark_paired_in_transaction(con, edition_id)
+
+
+def mark_paired_in_transaction(con, edition_id: int) -> None:
+    """mark_paired for a caller that already holds a transaction (and rolls it back on an error)."""
+    ed = _edition(con, edition_id)
+    if ed["status"] != "open":
+        raise _not_open(ed["status"])
+    found = problems(con, edition_id)
+    if found:
+        raise ApiError(400, "; ".join(found))
+    con.execute("UPDATE edition SET status = 'paired' WHERE id = ?", (edition_id,))
 
 
 def unpair(con, edition_id: int) -> None:
