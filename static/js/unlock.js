@@ -53,6 +53,9 @@ function wirePasswordForm(form, onUnlocked) {
   return form;
 }
 
+// The organizer's way in: the header's Admin link only appears once signed in as admin.
+export const ADMIN_SIGN_IN = `<p class="muted small"><a href="#/admin">Organizer? Admin sign-in</a></p>`;
+
 const INTRO = "Type the password from the family message. You only need to do this once on this phone.";
 
 export async function render(ctx) {
@@ -64,9 +67,9 @@ export async function render(ctx) {
     return;
   }
   if (list.length === 0) {
-    view.innerHTML = renderPasswordForm("Welcome", INTRO);
+    view.innerHTML = renderPasswordForm("Welcome", INTRO) + ADMIN_SIGN_IN;
   } else {
-    view.innerHTML = renderExchanges(list);
+    view.innerHTML = renderExchanges(list) + ADMIN_SIGN_IN;
     view.querySelector("[data-slot=form]").innerHTML = renderPasswordForm("Another password", "It adds the exchanges it opens to the list above.");
   }
   wirePasswordForm(view.querySelector("form[data-form=unlock]"), () => ctx.rerender());

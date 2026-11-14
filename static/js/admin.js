@@ -39,11 +39,14 @@ const renderSlot = () => `<div data-slot="msg"></div>`;
 const renderSaveRow = label => `<div class="btn-row"><button class="btn primary" type="submit">${esc(label)}</button></div>`;
 const renderInactive = (on, word = "hidden") => (on ? "" : ` (${esc(word)})`);
 
-const renderLogin = () => `
+// Same input settings as the family's password box: a phone keyboard must not capitalize or "correct" a password.
+export const renderLogin = () => `
   <form class="card" data-form="login" novalidate>
     <h1>Admin</h1>
     <p>For the organizer only. Family members don't need this.</p>
-    <label class="field"><span>Admin password</span><input name="password" type="password" autocomplete="current-password" required></label>
+    <label class="field"><span>Admin password</span>
+      <input name="password" type="password" autocomplete="current-password" autocapitalize="none" spellcheck="false" required></label>
+    <label class="check"><input name="show" type="checkbox"> Show the password as I type</label>
     ${renderSlot()}
     <button class="btn primary wide" type="submit">Sign in</button>
   </form>`;
@@ -234,6 +237,8 @@ async function attempt(slot, button, change) {
 function showLogin(ctx) {
   ctx.view.innerHTML = renderLogin();
   const form = ctx.view.querySelector("form");
+  const input = form.elements.password;
+  form.elements.show.addEventListener("change", () => { input.type = form.elements.show.checked ? "text" : "password"; });
   form.addEventListener("submit", async e => {
     e.preventDefault();
     const okay = await attempt(form.querySelector("[data-slot=msg]"), form.querySelector("button"),

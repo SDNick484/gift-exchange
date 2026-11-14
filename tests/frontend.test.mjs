@@ -9,7 +9,8 @@ import {
   savedRows, stamps,
 } from "../static/js/person.js";
 import { choicesFor, chosenOf, pairsBody, renderChecks, rosterOf } from "../static/js/admin-pairings.js";
-import { centsToText, moved, nextYear, renderAdminHome, rosterChoices } from "../static/js/admin.js";
+import { centsToText, moved, nextYear, renderAdminHome, renderLogin, rosterChoices } from "../static/js/admin.js";
+import { ADMIN_SIGN_IN } from "../static/js/unlock.js";
 import { factsOf, ideasLabel, personHash, renderHome, youFirst, youreGetting } from "../static/js/home.js";
 import { dayLabel, daysLabel, esc, eventDateLabel, hostLabel, inkFor, isStale, monthLabel, money, parseHash, validAccent } from "../static/js/core.js";
 
@@ -253,4 +254,12 @@ test("pairings: problems and warnings are escaped", () => {
   const html = renderChecks({ problems: ["<b>Sam</b> isn't getting a gift."], warnings: ["Alex had <i>Sam</i> last year too."] });
   assert.ok(html.includes("&lt;b&gt;Sam&lt;/b&gt;") && html.includes("&lt;i&gt;Sam&lt;/i&gt;") && !html.includes("<b>Sam"));
   assert.ok(renderChecks({ problems: [], warnings: [] }).includes("Everyone gives once and gets once."));
+});
+
+test("admin sign-in: the box a phone keyboard leaves alone, and a way to it from home", () => {
+  const html = renderLogin();
+  assert.match(html, /autocapitalize="none"/);
+  assert.match(html, /spellcheck="false"/);
+  assert.match(html, /name="show" type="checkbox"/);
+  assert.match(ADMIN_SIGN_IN, /href="#\/admin"/);
 });
