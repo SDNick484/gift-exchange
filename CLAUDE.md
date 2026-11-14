@@ -12,6 +12,8 @@ python -m pytest -q
 node --test tests/*.test.mjs                        # tests/frontend.test.mjs: the DOM-free helpers in static/js/
 for f in static/js/*.js; do node --check "$f"; done
 ruff check
+shellcheck -s sh installer/setup-head.sh installer/build.sh ops/exchange-backup
+sh installer/build.sh                               # writes dist/setup-exchange.sh (git-ignored)
 python3 app.py                                      # dev server on 127.0.0.1:8770
 echo 'a-password' | python3 manage.py hash-password # scrypt hash for ADMIN_PASSWORD_HASH (no DATA_DIR touched)
 ```
@@ -70,7 +72,11 @@ static/js/        hash-routed ES modules, no build step: main.js (router, header
                   admin-pairings.js (#/admin/e/<id>/pairings)
 tests/            conftest.py + one test file per module; test_frontend.py (shell, CSP and escaping scans over static/),
                   frontend.test.mjs (node --test)
-installer/ deploy/ ops/                                                                   (Task 8)
+installer/        setup-head.sh (the installer's text, with a __DEPLOY_DEFAULTS__ marker), build.sh (head + base64 tarball of
+                  every top-level *.py, static/ and ops/exchange-backup -> dist/setup-exchange.sh)
+deploy/           deploy.env.example (deploy.env is git-ignored; only APP_NAME and EXCHANGE_PORT are baked in)
+ops/              exchange-backup (nightly `sqlite3 .backup`, 0600 in /var/backups/exchange, keeps 14 days)
+.env.example      development settings
 ```
 
 Later modules are listed so the layout is known; add each to this file when it lands.
@@ -157,3 +163,9 @@ Later modules are listed so the layout is known; add each to this file when it l
     and a Reload button; Reload refetches, shows what's saved, and moves untouched fields to the fresh values while
     keeping typed ones, until the person picks "Save mine instead" or "Use what's saved". A profile save sends only
     the fields that were typed in. Never re-render a whole screen after a save.
+- Installer (`installer/`, Task 8): Alpine + OpenRC, service `exchange` (gunicorn on `127.0.0.1:${EXCHANGE_PORT}`, default 8770,
+  as the `exchange` user), `/opt/exchange` replaced on each run, `/var/lib/exchange` and `/etc/conf.d/exchange` kept.
+  `add_setting` only adds missing keys, single-quoted because `ADMIN_PASSWORD_HASH` holds `$`. A new setting read in
+  `settings.py` needs `.env.example` and an `add_setting` line (`tests/test_installer_static.py` checks both). Never bake
+  `ADMIN_PASSWORD_HASH` or set `SECRET_KEY`: the app makes `secret.key` itself. apk packages: `py3-flask py3-gunicorn`
+  plus `sqlite` (the backup's `sqlite3` command only).

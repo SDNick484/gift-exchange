@@ -55,6 +55,14 @@ jobs:
           files=(tests/*.test.mjs)
           if [ ${#files[@]} -eq 0 ]; then echo "no tests/*.test.mjs yet"; else node --test "${files[@]}"; fi
 
+  shellcheck:
+    name: shellcheck (sh)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # ubuntu-latest ships shellcheck.
+      - run: shellcheck -s sh installer/setup-head.sh installer/build.sh ops/exchange-backup
+
   alpine:
     # The container runs on Alpine's own py3-* packages, so test against exactly those.
     name: pytest (Alpine packages)
