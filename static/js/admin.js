@@ -152,7 +152,7 @@ const renderEdition = (e, people, open) => `
       <label class="field"><span>Label</span><input name="label" type="text" maxlength="40" value="${esc(e.label)}"></label>
       <label class="field"><span>Budget</span><span class="hint">Such as 50 or 25.00. Empty for none.</span>
         <input name="budget" type="text" inputmode="decimal" value="${esc(centsToText(e.budget_cents))}"></label>
-      <label class="field"><span>Date of the exchange</span><input name="event_date" type="date" value="${esc(e.event_date)}"></label>
+      <label class="field"><span>Gift exchange day</span><input name="event_date" type="date" value="${esc(e.event_date)}"></label>
       <label class="field"><span>Where</span><input name="location" type="text" maxlength="200" value="${esc(e.location)}"></label>
       <label class="field"><span>Rules</span><textarea name="rules" rows="3" maxlength="2000">${esc(e.rules)}</textarea></label>
       ${renderStatus(e)}
