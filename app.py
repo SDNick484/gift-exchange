@@ -178,7 +178,8 @@ def unlock():
     if not ids:
         access.record_failure(con, "exchange")
         raise ApiError(403, NO_MATCH)
-    access.clear_failures(con, "exchange")
+    # No clear_failures here: one counter covers every exchange, so clearing on success would let anyone who knows
+    # one exchange's password reset it every nine guesses at another's. Failures age out instead.
     g.access_entries = access.grant(con, access.access_entries(request), ids)
     return jsonify(exchanges=_exchange_list(ids))
 
@@ -198,8 +199,7 @@ def join_link(slug, token):
     xid = access.join(con, slug, token)
     if xid is None:
         access.record_failure(con, "exchange")
-    else:
-        access.clear_failures(con, "exchange")
+    else:                                   # a good link doesn't clear the scope either (see unlock)
         g.access_entries = access.grant(con, access.access_entries(request), [xid])
     return redirect(f"/#/x/{slug}" if SLUG.fullmatch(slug) else "/")
 
