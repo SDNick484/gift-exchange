@@ -89,7 +89,10 @@ Later modules are listed so the layout is known; add each to this file when it l
   the per-year roster; timestamps are integer epoch seconds; `participant` rows are created lazily on first save.
 - The `pairing` table keeps only `UNIQUE(edition_id, giver_id)`: a draft can hold a doubled recipient or a self-pair so
   `pairings.problems` can name it, and `pairings.mark_paired` is the one guard that an edition is paired as a complete
-  permutation. Schema is still v1 (no migrations before the family deadline).
+  permutation. Schema is v2 (see "Schema v2" below).
+- Schema v2: `wish_item.deleted_at INTEGER` (nullable), added by `db._to_v2` with `ALTER TABLE ... ADD COLUMN` inside
+  the migrate transaction. The v1 `SCHEMA` text is never edited (a deployed v1 database was made from it); a fresh
+  database runs v1 then v2. `tests/test_db.py` upgrades a populated v1 database and checks the rows survive.
 - `SECRET_KEY` comes from the environment, else `DATA_DIR/secret.key` (32 random bytes, mode 0600, created on first start).
 - Tests: `tests/conftest.py` sets the environment before importing `app`, gives every test a fresh database, and offers
   the fixtures `client`, `con`, `seed` (one exchange, one edition, people a, b, c) and `clock` (freezes `common.now`
@@ -148,6 +151,15 @@ Later modules are listed so the layout is known; add each to this file when it l
   - Closed editions: details and items are 423 `This year is closed.`; profile values are person-level and stay
     editable. Links go through `clean_url` (review focus 4). `updated_by` (60) is required on details, profile and
     item add/edit; delete (`{version}`) and reorder (`{edition_id, ids}`) take none.
+  - Soft delete and undo: `DELETE /items/<id>` `{version}` sets `deleted_at` and bumps `version`. Every `wish_item` read
+    and write ignores rows with `deleted_at` set (page, home item count, `item_of`, edit, reorder's list check,
+    bring-over), so a deleted item is 404, and `item_of(..., deleted=True)` finds only deleted ones. `POST
+    /items/<id>/restore` `{}` clears the mark: 404 unless it is set now, 423 in a closed year, no version. `init_db`
+    runs `lists.purge_deleted` after `migrate`: rows deleted over 86400 s ago go for good.
+  - Bring-over: `POST /people/<pid>/bring-over` `{edition_id, updated_by}` -> `{"copied": n}`. Source is the newest
+    earlier edition (by year, same exchange) whose roster had the person; live items are copied to the end of the
+    target list, skipping titles already live there (case-insensitive). 400 `Nothing to bring over.` when none; the
+    target needs the person on its roster (404) and is 423 when closed.
 - Frontend (`static/js/`, Task 7): native ES modules, hash routes, `static/js/package.json` is `{"type": "module"}`.
   - Escaping: markup is built in template literals whose every `${...}` is exactly one call to `esc`, `money`,
     `daysLabel`, `monthLabel` or a `render*` function, never in an unquoted attribute; `innerHTML` is only ever
@@ -160,6 +172,12 @@ Later modules are listed so the layout is known; add each to this file when it l
   - `core.js` touches no `document`/`window` at import so `node --test` can load it.
   - `document.title` is set only in `main.js`, from `/api/session`'s `app_name`.
   - Links out are `target="_blank" rel="noopener noreferrer"` with the text `Open link · <hostLabel>` (`core.renderLink`).
+  - Undo and bring-over (`person.js`): a delete shows "Deleted · Undo" in its own `[data-slot=undo]` for `UNDO_MS` (8 s),
+    one line and timer per idea; "Bring over last year's items" sits under Add an idea and is hidden in a closed year.
+  - Large text: `style.css` has no `nowrap` and no fixed wide boxes, children of grids/flex may shrink (`min-width: 0`)
+    and long words and addresses wrap, so 200% zoom has no sideways scroll (`tests/test_frontend.py` guards the rules).
+  - PWA: `manifest.json` is `display: standalone` with `static/icon.svg` listed at 192x192, 512x512 and `any`
+    (`purpose: any`); no PNG files.
   - Nothing typed is lost (review focus 3, `person.js`): each part of a person's page is a unit with its own form, and
     a save or Reload redraws only units not being edited. On 409 the form stays as typed under the server's message
     and a Reload button; Reload refetches, shows what's saved, and moves untouched fields to the fresh values while

@@ -174,6 +174,7 @@ const renderAddForm = () => `
   <form data-form="save" novalidate>${renderItemFields({})}
     <div class="btn-row"><button class="btn primary" type="submit">Add it</button><button class="btn quiet" type="button" data-act="cancel">Done</button></div>
   </form>`;
+const renderBringOver = readOnly => (readOnly ? "" : `<p><button class="btn quiet wide" type="button" data-act="bring-over">Bring over last year's items</button></p>`);
 const renderAddArea = readOnly => (readOnly ? "" : `<div data-unit="add">${renderAddButton()}</div>`);
 const renderIdeas = readOnly => `
   <h2>Ideas</h2>
@@ -181,7 +182,8 @@ const renderIdeas = readOnly => `
   <div data-slot="undo"></div>
   <ul class="rows" data-list="items"></ul>
   <p class="muted" data-empty hidden>No ideas yet.</p>
-  ${renderAddArea(readOnly)}`;
+  ${renderAddArea(readOnly)}
+  ${renderBringOver(readOnly)}`;
 
 // the 409 flow
 // The server's message and a Reload button. `typing`: a form below holds the person's text. `act`: "reload" for a
@@ -455,6 +457,26 @@ export async function render(ctx) {
     undoSlot.append(fromHtml(renderUndo, it));
     undoTimers.set(it.id, setTimeout(() => dropUndo(it.id), UNDO_MS));
   }
+  async function bringOver(btn) {
+    listMsg.innerHTML = "";
+    const who = await whoSaves();
+    if (!who) {
+      listMsg.innerHTML = renderError("Tap your name (or Just looking) first, so your name goes on the change.");
+      return;
+    }
+    btn.disabled = true;
+    let copied;
+    try {
+      ({ copied } = await send("POST", `${base}/people/${q(pid)}/bring-over`, { edition_id: page.edition_id, updated_by: who.name }));
+    } catch (err) {
+      listMsg.innerHTML = renderError(err?.status === 400 ? "There is nothing new to bring over from last year." : (err?.error ?? "Something went wrong. Try again."));
+      return;
+    } finally {
+      btn.disabled = false;
+    }
+    toast(copied === 1 ? "Brought over 1 idea" : `Brought over ${copied} ideas`);
+    await refreshQuietly(listMsg, "Brought over.");
+  }
   async function undo(id, btn) {
     btn.disabled = true;
     try {
@@ -504,6 +526,10 @@ export async function render(ctx) {
     if (act === "reload-list") {
       listMsg.innerHTML = "";
       await refreshQuietly(listMsg, "");
+      return;
+    }
+    if (act === "bring-over") {
+      bringOver(btn);
       return;
     }
     if (act === "undo") {
