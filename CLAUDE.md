@@ -51,8 +51,8 @@ before it sees them.
 ```
 app.py            Flask object, before/after hooks (mutation guard, security headers, cookie sliding), error handlers, the
                   exchange_required/admin_required decorators, every route (so far: /healthz, /robots.txt, unlock, join
-                  link, admin login/logout, /api/session, /api/exchanges, the /api/admin/ structure and pairing routes;
-                  stub GET /api/x/<slug> with pairings (Task 6 fills in the rest)), app.db(), init_db()
+                  link, admin login/logout, /api/session, /api/exchanges, the /api/admin/ structure and pairing routes,
+                  the family routes under /api/x/<slug>), app.db(), init_db()
 manage.py         host chores: `hash-password`
 settings.py       environment config, read once at import (DATA_DIR, EXCHANGE_PORT, APP_NAME, ADMIN_PASSWORD_HASH, SECRET_KEY)
 db.py             SCHEMA, SCHEMA_VERSION, connect(), transaction(), migrate()
@@ -60,7 +60,7 @@ common.py         ApiError, json_body, text, parse_cents, clean_url, now, today
 access.py         password hashing, unlock (option C), share links, gx_access/gx_admin cookies, admin session, throttle
 exchanges.py      exchanges, editions, people, roster, profile fields, current_edition
 pairings.py       draft save, problems, warnings, Mark paired, Unpair, visibility
-lists.py          participant details, profile values, wish items, versions               (Task 6)
+lists.py          participant pages, details, profile values, wish items, version checks, scoping helpers
 static/           robots.txt (Task 2); index.html, style.css, manifest.json, icon.svg, static/js/ (Task 7)
 tests/            conftest.py + one test file per module
 installer/ deploy/ ops/                                                                   (Task 8)
@@ -79,13 +79,18 @@ Later modules are listed so the layout is known; add each to this file when it l
   permutation. Schema is still v1 (no migrations before the family deadline).
 - `SECRET_KEY` comes from the environment, else `DATA_DIR/secret.key` (32 random bytes, mode 0600, created on first start).
 - Tests: `tests/conftest.py` sets the environment before importing `app`, gives every test a fresh database, and offers
-  the fixtures `client`, `con`, `seed` (one exchange, one edition, people a, b, c) and `clock` (freezes `common.now`;
-  `clock.advance(s)`), plus `mut(**extra)` for the headers every mutation needs (`X-Exchange: 1`, same-origin
+  the fixtures `client`, `con`, `seed` (one exchange, one edition, people a, b, c) and `clock` (freezes `common.now`
+  at the real current second, so cookies set by earlier fixtures stay valid; `clock.advance(s)`), plus `mut(**extra)` for the headers every mutation needs (`X-Exchange: 1`, same-origin
   `Origin`), `mk_exchange(con, slug, password, active=1, sort_order=0) -> id` and `token_of(con, id)`. Add shared
   helpers there. Also: `admin` (logged-in client with `mut()` headers), `x` (exchange `x.slug` 'family', password
-  `pw12`, people `x.alex/sam/jordan`), `family` (a second client that has typed `pw12`), and the helpers `mk_edition`,
-  `put_roster`, `roster_ids`, `paired_ready_edition(admin, x, year=2026)`, `save_pairs`, `full_cycle(admin, e, ids)`,
-  `paired_edition(admin, x, year, pairs)` and `set_household(admin, ids, label)`.
+  `pw12`, people `x.alex/sam/jordan`), `family` (a second client that has typed `pw12`, with `mut()`'s headers on every
+  request), `fx` (x plus the default fields and an open edition 2026, `fx.edition`, roster alex, sam, jordan; `fx.con`),
+  `other` (a second exchange `other`, password `pw34`, `other.alex` on `other.edition`, one field `other.field`, also
+  unlocked by `family`), and the helpers `mk_edition`, `put_roster`, `roster_ids`,
+  `paired_ready_edition(admin, x, year=2026)`, `save_pairs`, `full_cycle(admin, e, ids)`,
+  `paired_edition(admin, x, year, pairs)`, `set_household(admin, ids, label)`, `add_item(client, fx, pid, title,
+  raw=False, edition=None, **extra) -> id`, `save_details(client, fx, pid, about=None, amazon_url=None, raw=False,
+  edition=None) -> version`, `put_profile(client, fx, pid, values, expected, updated_by="Sam")` and `field_id(fx, label)`.
 - Access (`access.py` docstring has the details): one typed password unlocks every active exchange whose hash matches
   (option C); a share link `/x/<slug>/join/<token>` opens only its own exchange, and a bad token sets nothing but still
   redirects. `gx_access` (salt `access`, `{"x": {id: password_version}}`, 400 days, `SameSite=Lax`) is re-issued on every
@@ -115,3 +120,16 @@ Later modules are listed so the layout is known; add each to this file when it l
   - `visible(admin=False)` is `None` unless the edition is `paired` or `closed`. `GET /api/x/<slug>` returns
     `pairings` for the current edition with `admin=False` always: the family page never shows a draft, even to the
     admin. The front end shows "Names not drawn yet." for `null`.
+- Family lists (`lists.py`; routes under `/api/x/<slug>`, all `@exchange_required`):
+  - Scoping: every person, item, edition or field id that isn't in this exchange is 404, and so is someone off the
+    edition's roster for that edition (page, details, items, reorder). Routes call `lists.edition_of`, `person_of`,
+    `on_roster` and `item_of` before any writer. `?edition=` defaults to the current edition. A malformed id (not
+    ASCII digits, or past SQLite's 64-bit range) is 400.
+  - Versions (review focus 3): a stale save is 409 `Someone else just changed this list. Reload to see it.` and saves
+    nothing. Details and items use `UPDATE ... WHERE version = ?` and rowcount; the details row is created on first
+    save with version 1 (the page shows 0). Profile values check `expected[field_id]` against the stored `updated_at`
+    (None when blank), skip unchanged fields, and move `updated_at` on by at least 1 s per change. Reorder takes no
+    version and bumps none, but a list that doesn't match the stored items is 409.
+  - Closed editions: details and items are 423 `This year is closed.`; profile values are person-level and stay
+    editable. Links go through `clean_url` (review focus 4). `updated_by` (60) is required on details, profile and
+    item add/edit; delete (`{version}`) and reorder (`{edition_id, ids}`) take none.

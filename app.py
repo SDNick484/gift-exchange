@@ -1,5 +1,7 @@
 """The Flask object, hooks and routes. Route-free logic lives in sibling modules that take a sqlite3.Connection."""
 import os
+import re
+from datetime import date
 from functools import wraps
 from urllib.parse import urlsplit
 
@@ -9,8 +11,10 @@ from werkzeug.exceptions import HTTPException
 import access
 import db as database
 import exchanges
+import lists
 import pairings
 import settings
+import common
 from common import ApiError, json_body, text
 
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -361,15 +365,145 @@ def admin_unpair(eid):
     return jsonify(ok=True)
 
 
+# -- the family side: home, participant pages, details, profile values, items (rules in lists.py)
+ID_TEXT = re.compile(r"[0-9]{1,18}")  # an id in a query string or a JSON object key; ASCII digits that fit SQLite
+
+
+def _days_until(event_date):
+    if not event_date:
+        return None
+    return (date.fromisoformat(event_date) - date.fromisoformat(common.today())).days
+
+
+def _edition_param():
+    """?edition=<id> of this exchange (404 for anyone else's), else the current edition (None when there is none)."""
+    raw = request.args.get("edition")
+    if raw is None:
+        return exchanges.current_edition(db(), g.exchange["id"])
+    if not ID_TEXT.fullmatch(raw):
+        raise ApiError(400, "edition must be an id.")
+    return lists.edition_of(db(), g.exchange["id"], int(raw))
+
+
+def _edition_in_body(data):
+    """The body's edition_id, which must be an edition of this exchange (404 otherwise)."""
+    if not lists.is_id(data.get("edition_id")):
+        raise ApiError(400, "edition_id must be an id.")
+    return lists.edition_of(db(), g.exchange["id"], data["edition_id"])["id"]
+
+
+def _on_roster(edition_id, pid):
+    lists.person_of(db(), g.exchange["id"], pid)
+    lists.on_roster(db(), edition_id, pid)
+
+
 @app.get("/api/x/<slug>")
 @exchange_required
 def exchange_home(slug):
-    """Minimal until Task 6 fills in the edition and people. pairings is the current edition's list, or null while
-    the names aren't drawn yet (no edition, or one still open): the family never sees a draft, even with an admin cookie."""
-    x = g.exchange
-    edition = exchanges.current_edition(db(), x["id"])
-    shown = pairings.visible(db(), edition["id"], admin=False) if edition else None
-    return jsonify(exchange={"slug": x["slug"], "name": x["name"], "accent_color": x["accent_color"]}, pairings=shown)
+    """The exchange, the edition (?edition=<id>, else the current one) with days_until, every edition for the year
+    picker, the roster with item counts, and pairings: null while the names aren't drawn yet (no edition, or one
+    still open). The family never sees a draft, even with an admin cookie."""
+    x, con = g.exchange, db()
+    ed = _edition_param()
+    edition = None
+    if ed is not None:
+        edition = {k: ed[k] for k in ("id", "label", "year", "budget_cents", "event_date", "location", "rules",
+                                      "status")}
+        edition["days_until"] = _days_until(ed["event_date"])
+    editions = [{"id": r["id"], "label": r["label"], "status": r["status"]} for r in
+                con.execute("SELECT id, label, status FROM edition WHERE exchange_id = ? ORDER BY year DESC", (x["id"],))]
+    return jsonify(exchange={"slug": x["slug"], "name": x["name"], "accent_color": x["accent_color"]},
+                   edition=edition, editions=editions, people=lists.people(con, ed["id"]) if ed else [],
+                   pairings=pairings.visible(con, ed["id"], admin=False) if ed else None)
+
+
+@app.get("/api/x/<slug>/people/<int:pid>")
+@exchange_required
+def person_page(slug, pid):
+    ed = _edition_param()
+    if ed is None:
+        raise ApiError(404, "No such edition.")
+    _on_roster(ed["id"], pid)
+    return jsonify(lists.page(db(), ed["id"], pid))
+
+
+@app.put("/api/x/<slug>/people/<int:pid>/details")
+@exchange_required
+def person_details(slug, pid):
+    """{edition_id, about, amazon_url, version, updated_by} -> {"version": new}."""
+    d = json_body()
+    eid = _edition_in_body(d)
+    _on_roster(eid, pid)
+    version = lists.save_details(db(), eid, pid, d.get("about"), d.get("amazon_url"), lists.version_of(d),
+                                 lists.updated_by_of(d))
+    return jsonify(version=version)
+
+
+def _id_map(data, key, check):
+    """data[key] as {int field id: check(value)}; JSON object keys arrive as text."""
+    raw = data.get(key)
+    if not isinstance(raw, dict) or not all(ID_TEXT.fullmatch(k) for k in raw):
+        raise ApiError(400, f"{key} must map field ids to values.")
+    return {int(k): check(v) for k, v in raw.items()}
+
+
+def _expected_stamp(value):
+    if value is not None and not lists.is_id(value):
+        raise ApiError(400, "expected must map field ids to updated_at or null.")
+    return value
+
+
+@app.put("/api/x/<slug>/people/<int:pid>/profile")
+@exchange_required
+def person_profile(slug, pid):
+    """{values: {field_id: text|null}, expected: {field_id: updated_at|null}, updated_by} -> {"profile": [...]}.
+    Person-level: no edition, and a closed year doesn't stop it."""
+    d = json_body()
+    lists.person_of(db(), g.exchange["id"], pid)
+    values = _id_map(d, "values", lambda v: v)
+    expected = _id_map(d, "expected", _expected_stamp)
+    lists.save_profile(db(), pid, g.exchange["id"], values, expected, lists.updated_by_of(d))
+    return jsonify(profile=lists.profile(db(), pid, g.exchange["id"]))
+
+
+@app.post("/api/x/<slug>/people/<int:pid>/items")
+@exchange_required
+def item_add(slug, pid):
+    """{edition_id, title, url?, note?, updated_by} -> 201 {"id", "version": 1}."""
+    d = json_body()
+    eid = _edition_in_body(d)
+    _on_roster(eid, pid)
+    return jsonify(id=lists.add_item(db(), eid, pid, d, lists.updated_by_of(d)), version=1), 201
+
+
+@app.patch("/api/x/<slug>/items/<int:item_id>")
+@exchange_required
+def item_update(slug, item_id):
+    """{title?, url?, note?, version, updated_by} -> {"version": new}."""
+    d = json_body()
+    lists.item_of(db(), g.exchange["id"], item_id)
+    return jsonify(version=lists.update_item(db(), item_id, d, lists.version_of(d), lists.updated_by_of(d)))
+
+
+@app.delete("/api/x/<slug>/items/<int:item_id>")
+@exchange_required
+def item_delete(slug, item_id):
+    """{version} -> {"ok": true}."""
+    d = json_body()
+    lists.item_of(db(), g.exchange["id"], item_id)
+    lists.delete_item(db(), item_id, lists.version_of(d))
+    return jsonify(ok=True)
+
+
+@app.put("/api/x/<slug>/people/<int:pid>/items/order")
+@exchange_required
+def items_order(slug, pid):
+    """{edition_id, ids} -> {"ok": true}."""
+    d = json_body()
+    eid = _edition_in_body(d)
+    _on_roster(eid, pid)
+    lists.reorder(db(), eid, pid, d.get("ids"))
+    return jsonify(ok=True)
 
 
 @app.get("/healthz")

@@ -6,6 +6,7 @@ import secrets
 import shutil
 import sys
 import tempfile
+import time
 import types
 
 import pytest
@@ -27,6 +28,7 @@ import access  # noqa: E402
 import app as exchange  # noqa: E402
 import common  # noqa: E402
 import db  # noqa: E402
+import exchanges  # noqa: E402
 import settings  # noqa: E402
 
 ORIGIN = "http://localhost"  # the Flask test client's host
@@ -70,10 +72,11 @@ def seed(con):
 
 
 class Clock:
-    """A frozen common.now() that tests move forward with advance(seconds). The cookie signers read it too."""
+    """A frozen common.now() that tests move forward with advance(seconds). The cookie signers read it too.
+    It freezes at the real current second, so cookies that fixtures set up before it (admin, family) stay valid."""
 
-    def __init__(self, t=1_800_000_000):
-        self.t = t
+    def __init__(self, t=None):
+        self.t = int(time.time()) if t is None else t
 
     def advance(self, seconds):
         self.t += seconds
@@ -121,7 +124,8 @@ def x(con):
 def family(x):
     """A second client with no admin cookie that has typed the exchange's password: what a relative's phone is."""
     c = exchange.app.test_client()
-    assert c.post("/api/unlock", json={"password": "pw12"}, headers=mut()).status_code == 200
+    c.environ_base.update(HTTP_X_EXCHANGE="1", HTTP_ORIGIN=ORIGIN)  # mut()'s headers on every request, like admin
+    assert c.post("/api/unlock", json={"password": "pw12"}).status_code == 200
     return c
 
 
@@ -176,3 +180,60 @@ def set_household(admin, person_ids, label):
     for pid in person_ids:
         r = admin.patch(f"/api/admin/people/{pid}", json={"household": label})
         assert r.status_code == 200, r.get_json()
+
+
+@pytest.fixture
+def fx(admin, family, x, con):
+    """x with the default profile fields and an open edition 2026 (fx.edition) whose roster is alex, sam, jordan.
+    family has unlocked it. fx.id, fx.slug, fx.alex/sam/jordan as in x; fx.con reads the database."""
+    con.executemany("INSERT INTO profile_field (exchange_id, label, hint, sort_order) VALUES (?, ?, ?, ?)",
+                    [(x.id, label, hint, i) for i, (label, hint) in enumerate(exchanges.DEFAULT_FIELDS)])
+    e = paired_ready_edition(admin, x, 2026)
+    return types.SimpleNamespace(id=x.id, slug=x.slug, alex=x.alex, sam=x.sam, jordan=x.jordan, edition=e, con=con)
+
+
+@pytest.fixture
+def other(admin, family, con):
+    """A second exchange 'other' (password 'pw34') with one person other.alex on the roster of its open edition
+    2026 (other.edition). family has unlocked it too, so only scoping keeps the two apart."""
+    xid = mk_exchange(con, "other", "pw34")
+    alex = con.execute("INSERT INTO person (exchange_id, name) VALUES (?, 'Alex')", (xid,)).lastrowid
+    fid = con.execute("INSERT INTO profile_field (exchange_id, label) VALUES (?, 'Shoe size')", (xid,)).lastrowid
+    e = mk_edition(admin, xid, 2026)
+    put_roster(admin, e, [alex])
+    assert family.post("/api/unlock", json={"password": "pw34"}).status_code == 200
+    return types.SimpleNamespace(id=xid, slug="other", alex=alex, edition=e, field=fid)
+
+
+def add_item(client, fx, person_id, title, raw=False, edition=None, **extra):
+    """POST an item (url, note, updated_by as extra). Returns its id, or the response when raw."""
+    body = {"edition_id": edition or fx.edition, "title": title, "updated_by": "Sam", **extra}
+    r = client.post(f"/api/x/{fx.slug}/people/{person_id}/items", json=body)
+    if raw:
+        return r
+    assert r.status_code == 201, r.get_json()
+    return r.get_json()["id"]
+
+
+def save_details(client, fx, person_id, about=None, amazon_url=None, raw=False, edition=None):
+    """PUT details at the version the page has now. Returns the new version, or the response when raw."""
+    e = edition or fx.edition
+    page = client.get(f"/api/x/{fx.slug}/people/{person_id}?edition={e}").get_json()
+    r = client.put(f"/api/x/{fx.slug}/people/{person_id}/details",
+                   json={"edition_id": e, "about": about, "amazon_url": amazon_url, "version": page["version"],
+                         "updated_by": "Sam"})
+    if raw:
+        return r
+    assert r.status_code == 200, r.get_json()
+    return r.get_json()["version"]
+
+
+def put_profile(client, fx, person_id, values, expected, updated_by="Sam"):
+    """PUT profile values {field_id: value} with the updated_at each was loaded at ({field_id: None} when blank)."""
+    return client.put(f"/api/x/{fx.slug}/people/{person_id}/profile",
+                      json={"values": values, "expected": expected, "updated_by": updated_by})
+
+
+def field_id(fx, label):
+    return fx.con.execute("SELECT id FROM profile_field WHERE exchange_id = ? AND label = ?",
+                          (fx.id, label)).fetchone()[0]
