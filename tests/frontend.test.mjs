@@ -8,6 +8,7 @@ import {
   freshValues, lastText, lastUpdate, mergeFresh, profileBody, renderBasicsView, renderConflict, renderItemView, renderReloaded,
   savedRows, stamps,
 } from "../static/js/person.js";
+import { centsToText, moved, nextYear, renderAdminHome, rosterChoices } from "../static/js/admin.js";
 import { factsOf, ideasLabel, personHash, renderHome, youFirst, youreGetting } from "../static/js/home.js";
 import { dayLabel, daysLabel, esc, eventDateLabel, hostLabel, inkFor, isStale, monthLabel, money, parseHash, validAccent } from "../static/js/core.js";
 
@@ -216,4 +217,23 @@ test("person: the 409 box shows the server's message and Reload, escaped", () =>
   assert.ok(reloaded.includes("Here's what's saved now") && reloaded.includes("&lt;img src=x&gt;") && reloaded.includes("(empty)"));
   assert.ok(reloaded.includes('data-act="use-saved"') && !reloaded.includes("<img"));
   assert.ok(renderReloaded([], true).includes("deleted on another phone"));
+});
+
+test("admin: budget text, next year, roster choices, field order", () => {
+  assert.equal(centsToText(5000), "50");
+  assert.equal(centsToText(2999), "29.99");
+  assert.equal(centsToText(5), "0.05");
+  assert.equal(centsToText(null), "");
+  assert.equal(nextYear([{ year: 2025 }, { year: 2026 }]), 2027);
+  assert.equal(nextYear([], new Date(2026, 10, 13)), 2026);
+  const people = [{ id: 1, active: true }, { id: 2, active: false }, { id: 3, active: false }];
+  assert.deepEqual(rosterChoices(people, { person_ids: [3] }).map(p => p.id), [1, 3]);
+  assert.deepEqual(moved([1, 2, 3], 2, -1), [2, 1, 3]);
+  assert.deepEqual(moved([1, 2, 3], 3, 1), null);
+  assert.deepEqual(moved([1, 2, 3], 1, 1), [2, 1, 3]);
+});
+
+test("admin: exchange names are escaped", () => {
+  const html = renderAdminHome([{ id: 1, slug: "x", name: "<b>Adults</b>", active: false }]);
+  assert.ok(html.includes("&lt;b&gt;Adults&lt;/b&gt; (closed to the family)") && !html.includes("<b>"));
 });

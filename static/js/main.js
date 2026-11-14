@@ -14,6 +14,9 @@ function pick(parts) {
     if (parts.length === 2) return () => import("./home.js");
     if (parts.length === 4 && parts[2] === "p" && ID.test(parts[3])) return () => import("./person.js");
   }
+  if (parts[0] === "admin") {
+    if (parts.length === 1 || (parts.length === 3 && parts[1] === "x" && ID.test(parts[2]))) return () => import("./admin.js");
+  }
   return null;
 }
 
