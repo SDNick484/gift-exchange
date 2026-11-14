@@ -515,6 +515,16 @@ def item_delete(slug, item_id):
     return jsonify(ok=True)
 
 
+@app.post("/api/x/<slug>/items/<int:item_id>/restore")
+@exchange_required
+def item_restore(slug, item_id):
+    """{} -> {"ok": true}. Undo of a delete; 404 unless the item is deleted now (and was not purged)."""
+    json_body()
+    lists.item_of(db(), g.exchange["id"], item_id, deleted=True)
+    lists.restore_item(db(), item_id)
+    return jsonify(ok=True)
+
+
 @app.put("/api/x/<slug>/people/<int:pid>/items/order")
 @exchange_required
 def items_order(slug, pid):

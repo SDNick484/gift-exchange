@@ -435,3 +435,89 @@ def test_bring_over_scoping_closed_and_shape(family, admin, fx, other):
     r = _bring(family, fx, e27)
     assert (r.status_code, r.get_json()["error"]) == (423, "This year is closed.")
     assert _titles(family, fx, edition=e27) == []
+
+
+# ---------------------------------------------------------------- soft delete and undo
+def test_bring_over_skips_deleted_source_items_and_counts_deleted_target_titles_as_absent(family, admin, fx):
+    a = add_item(family, fx, fx.sam, "Socks"); add_item(family, fx, fx.sam, "Mug")
+    family.delete(f"/api/x/{fx.slug}/items/{a}", json={"version": 1})
+    e27 = mk_edition(admin, fx.id, 2027); put_roster(admin, e27, [fx.sam])
+    gone = add_item(family, fx, fx.sam, "Mug", edition=e27)
+    family.delete(f"/api/x/{fx.slug}/items/{gone}", json={"version": 1})
+    assert _bring(family, fx, e27).get_json() == {"copied": 1}
+    assert _titles(family, fx, edition=e27) == ["Mug"]
+
+
+def test_delete_then_restore(family, fx):
+    a = add_item(family, fx, fx.sam, "Socks")
+    family.delete(f"/api/x/{fx.slug}/items/{a}", json={"version": 1})
+    assert family.get(f"/api/x/{fx.slug}/people/{fx.sam}").get_json()["items"] == []
+    family.post(f"/api/x/{fx.slug}/items/{a}/restore", json={})
+    assert [i["title"] for i in family.get(f"/api/x/{fx.slug}/people/{fx.sam}").get_json()["items"]] == ["Socks"]
+
+
+def test_deleted_items_are_invisible_everywhere(family, fx):
+    a = add_item(family, fx, fx.sam, "Socks"); b = add_item(family, fx, fx.sam, "Mug")
+    assert family.delete(f"/api/x/{fx.slug}/items/{a}", json={"version": 1}).status_code == 200
+    home = family.get(f"/api/x/{fx.slug}").get_json()
+    assert {p["name"]: p["item_count"] for p in home["people"]}["Sam"] == 1
+    base = f"/api/x/{fx.slug}/items/{a}"
+    assert family.patch(base, json={"title": "X", "version": 2, "updated_by": "Sam"}).status_code == 404
+    assert family.delete(base, json={"version": 2}).status_code == 404
+    order = f"/api/x/{fx.slug}/people/{fx.sam}/items/order"
+    assert family.put(order, json={"edition_id": fx.edition, "ids": [b]}).status_code == 200
+    r = family.put(order, json={"edition_id": fx.edition, "ids": [a, b]})
+    assert r.status_code == 409 and r.get_json()["error"] == RELOAD
+    # The row is still there, soft-deleted, with its version bumped.
+    row = fx.con.execute("SELECT version, deleted_at FROM wish_item WHERE id = ?", (a,)).fetchone()
+    assert row["version"] == 2 and row["deleted_at"] is not None
+
+
+def test_delete_still_checks_the_version(family, fx):
+    a = add_item(family, fx, fx.sam, "Socks")
+    r = family.delete(f"/api/x/{fx.slug}/items/{a}", json={"version": 9})
+    assert r.status_code == 409 and r.get_json()["error"] == RELOAD
+    assert _titles(family, fx) == ["Socks"]
+
+
+def test_restore_only_while_deleted(family, admin, fx, other):
+    a = add_item(family, fx, fx.sam, "Socks")
+    url = f"/api/x/{fx.slug}/items/{a}/restore"
+    assert family.post(url, json={}).status_code == 404                               # not deleted
+    family.delete(f"/api/x/{fx.slug}/items/{a}", json={"version": 1})
+    assert family.post(f"/api/x/{other.slug}/items/{a}/restore", json={}).status_code == 404   # another exchange
+    assert family.post(url, json={}).status_code == 200
+    assert family.post(url, json={}).status_code == 404                               # already restored
+    assert family.post(f"/api/x/{fx.slug}/items/99999/restore", json={}).status_code == 404
+
+
+def test_restore_in_a_closed_year_is_423_and_off_roster_is_404(family, admin, fx):
+    a = add_item(family, fx, fx.sam, "Socks")
+    family.delete(f"/api/x/{fx.slug}/items/{a}", json={"version": 1})
+    put_roster(admin, fx.edition, [fx.alex, fx.jordan])
+    assert family.post(f"/api/x/{fx.slug}/items/{a}/restore", json={}).status_code == 404
+    put_roster(admin, fx.edition, [fx.alex, fx.sam, fx.jordan])
+    admin.patch(f"/api/admin/editions/{fx.edition}", json={"status": "closed"})
+    r = family.post(f"/api/x/{fx.slug}/items/{a}/restore", json={})
+    assert (r.status_code, r.get_json()["error"]) == (423, "This year is closed.")
+    assert fx.con.execute("SELECT deleted_at FROM wish_item WHERE id = ?", (a,)).fetchone()[0] is not None
+
+
+def test_restore_needs_the_unlock_and_mutation_headers(client, family, fx):
+    a = add_item(family, fx, fx.sam, "Socks")
+    family.delete(f"/api/x/{fx.slug}/items/{a}", json={"version": 1})
+    assert client.post(f"/api/x/{fx.slug}/items/{a}/restore", json={}).status_code in (400, 403)
+
+
+def test_purge_removes_only_items_deleted_over_a_day_ago(family, fx, clock):
+    import lists
+    a = add_item(family, fx, fx.sam, "Old"); b = add_item(family, fx, fx.sam, "Recent"); c = add_item(family, fx, fx.sam, "Live")
+    family.delete(f"/api/x/{fx.slug}/items/{a}", json={"version": 1})
+    clock.advance(86400 - 100)
+    family.delete(f"/api/x/{fx.slug}/items/{b}", json={"version": 1})
+    clock.advance(200)                      # a is 86500 s old, b is 200 s old
+    assert lists.purge_deleted(fx.con) == 1
+    left = {r[0] for r in fx.con.execute("SELECT id FROM wish_item")}
+    assert left == {b, c}
+    assert family.post(f"/api/x/{fx.slug}/items/{a}/restore", json={}).status_code == 404
+    assert family.post(f"/api/x/{fx.slug}/items/{b}/restore", json={}).status_code == 200

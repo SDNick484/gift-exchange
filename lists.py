@@ -13,6 +13,9 @@ Rules kept here:
   and saves nothing.
 - Details and items of a closed edition are 423 CLOSED. Profile values belong to the person, carry into every
   edition, and stay editable when a year is closed.
+- Deleting an item is soft: `deleted_at` is set and every read and write ignores the row (404, not counted, not in
+  the order check, not "already present" for bring-over). `restore_item` clears it while it is set; start-up purges
+  rows deleted over a day ago. `bring_over` copies the person's live items from their newest earlier edition.
 - Links go through common.clean_url, so `amazon.com/x ` is stored as `https://amazon.com/x` (review focus 4)."""
 import common
 from common import ApiError, clean_url, text
@@ -73,11 +76,13 @@ def on_roster(con, edition_id: int, person_id: int) -> None:
         raise ApiError(404, "No such person.")
 
 
-def item_of(con, exchange_id: int, item_id: int):
-    """The item row, or 404 unless its edition is in this exchange and its person is on that edition's roster."""
+def item_of(con, exchange_id: int, item_id: int, deleted: bool = False):
+    """The live item row, or 404 unless its edition is in this exchange and its person is on that edition's roster.
+    A soft-deleted item is 404 too, except with deleted=True, which finds only those (restore)."""
     row = con.execute("SELECT i.* FROM wish_item i JOIN edition e ON e.id = i.edition_id "
                       "JOIN edition_people ep ON ep.edition_id = i.edition_id AND ep.person_id = i.person_id "
-                      "WHERE i.id = ? AND e.exchange_id = ?", (_key(item_id), exchange_id)).fetchone()
+                      "WHERE i.id = ? AND e.exchange_id = ? AND i.deleted_at IS " + ("NOT NULL" if deleted else "NULL"),
+                       (_key(item_id), exchange_id)).fetchone()
     if row is None:
         raise ApiError(404, "No such item.")
     return row
@@ -110,7 +115,8 @@ def page(con, edition_id: int, person_id: int) -> dict:
                          "WHERE p.id = ?", (edition_id, person_id)).fetchone()
     part = con.execute("SELECT * FROM participant WHERE edition_id = ? AND person_id = ?",
                        (edition_id, person_id)).fetchone()
-    items = con.execute("SELECT * FROM wish_item WHERE edition_id = ? AND person_id = ? ORDER BY sort_order, id",
+    items = con.execute("SELECT * FROM wish_item WHERE edition_id = ? AND person_id = ? AND deleted_at IS NULL "
+                        "ORDER BY sort_order, id",
                         (edition_id, person_id))
     return {"person": {"id": person["id"], "name": person["name"]}, "edition_id": edition_id,
             "about": part["about"] if part else "", "amazon_url": part["amazon_url"] if part else None,
@@ -123,7 +129,7 @@ def people(con, edition_id: int) -> list[dict]:
     """The edition's roster by name, each with their item count and whether they have an Amazon list."""
     rows = con.execute(
         "SELECT p.id, p.name, (SELECT COUNT(*) FROM wish_item i WHERE i.edition_id = ep.edition_id "
-        "AND i.person_id = p.id) AS item_count, EXISTS (SELECT 1 FROM participant pa WHERE pa.edition_id = "
+        "AND i.person_id = p.id AND i.deleted_at IS NULL) AS item_count, EXISTS (SELECT 1 FROM participant pa WHERE pa.edition_id = "
         "ep.edition_id AND pa.person_id = p.id AND pa.amazon_url IS NOT NULL) AS has_amazon "
         "FROM edition_people ep JOIN person p ON p.id = ep.person_id WHERE ep.edition_id = ? "
         "ORDER BY p.name COLLATE NOCASE, p.id", (edition_id,))
@@ -210,7 +216,8 @@ def _item_fields(data: dict, partial: bool) -> dict:
 def _open_item(con, item_id: int) -> None:
     """423 when the item's edition is closed; 404 when the item went (deleted on another phone after the route's
     item_of check). Call inside the writer's transaction."""
-    row = con.execute("SELECT edition_id FROM wish_item WHERE id = ?", (item_id,)).fetchone()
+    row = con.execute("SELECT edition_id FROM wish_item WHERE id = ? AND deleted_at IS NULL",
+                      (item_id,)).fetchone()
     if row is None:
         raise ApiError(404, "No such item.")
     _open(con, row[0])
@@ -225,7 +232,7 @@ def add_item(con, edition_id: int, person_id: int, data: dict, updated_by: str) 
         return con.execute(
             "INSERT INTO wish_item (edition_id, person_id, title, url, note, sort_order, created_at, updated_at, "
             "updated_by) VALUES (?, ?, ?, ?, ?, (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM wish_item "
-            "WHERE edition_id = ? AND person_id = ?), ?, ?, ?)",
+            "WHERE edition_id = ? AND person_id = ? AND deleted_at IS NULL), ?, ?, ?)",
             (edition_id, person_id, f["title"], f["url"], f["note"], edition_id, person_id, now, now,
              updated_by)).lastrowid
 
@@ -237,17 +244,33 @@ def update_item(con, item_id: int, data: dict, version: int, updated_by: str) ->
     with transaction(con):
         _open_item(con, item_id)
         cur = con.execute(f"UPDATE wish_item SET {cols}, version = version + 1, updated_at = ?, updated_by = ? "
-                          "WHERE id = ? AND version = ?", (*sets.values(), common.now(), updated_by, item_id, version))
+                          "WHERE id = ? AND version = ? AND deleted_at IS NULL", (*sets.values(), common.now(), updated_by, item_id, version))
         if cur.rowcount != 1:
             raise _stale()
     return version + 1
 
 
 def delete_item(con, item_id: int, version: int) -> None:
+    """Soft delete: sets deleted_at and bumps the version, so a form open on another phone is stale. The row is
+    purged a day later (purge_deleted) unless restore_item clears the mark first."""
     with transaction(con):
         _open_item(con, item_id)
-        if con.execute("DELETE FROM wish_item WHERE id = ? AND version = ?", (item_id, version)).rowcount != 1:
+        if con.execute("UPDATE wish_item SET deleted_at = ?, version = version + 1 "
+                       "WHERE id = ? AND version = ? AND deleted_at IS NULL",
+                       (common.now(), item_id, version)).rowcount != 1:
             raise _stale()
+
+
+def restore_item(con, item_id: int) -> None:
+    """Undo a delete: clears deleted_at. Needs no version. 404 when the item isn't deleted (already restored, or
+    purged); 423 when its edition is closed. The caller has checked scope with item_of(..., deleted=True)."""
+    with transaction(con):
+        row = con.execute("SELECT edition_id FROM wish_item WHERE id = ? AND deleted_at IS NOT NULL",
+                          (item_id,)).fetchone()
+        if row is None:
+            raise ApiError(404, "No such item.")
+        _open(con, row[0])
+        con.execute("UPDATE wish_item SET deleted_at = NULL WHERE id = ?", (item_id,))
 
 
 def purge_deleted(con) -> int:
@@ -297,7 +320,8 @@ def reorder(con, edition_id: int, person_id: int, ids: list[int]) -> None:
         raise ApiError(400, "ids must list each item once.")
     with transaction(con):
         _open(con, edition_id)
-        have = {r[0] for r in con.execute("SELECT id FROM wish_item WHERE edition_id = ? AND person_id = ?",
+        have = {r[0] for r in con.execute("SELECT id FROM wish_item WHERE edition_id = ? AND person_id = ? "
+                                          "AND deleted_at IS NULL",
                                           (edition_id, person_id))}
         if set(ids) != have:
             exchange_id = con.execute("SELECT exchange_id FROM edition WHERE id = ?", (edition_id,)).fetchone()[0]

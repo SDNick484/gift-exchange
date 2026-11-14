@@ -6,7 +6,7 @@ import { test } from "node:test";
 import { cleanMe, meCookie, parseMe } from "../static/js/whoami.js";
 import {
   freshValues, lastText, lastUpdate, mergeFresh, profileBody, renderBasicsView, renderConflict, renderItemView, renderReloaded,
-  savedRows, stamps,
+  savedRows, stamps, UNDO_MS, renderUndo,
 } from "../static/js/person.js";
 import { choicesFor, chosenOf, pairsBody, renderChecks, rosterOf } from "../static/js/admin-pairings.js";
 import { centsToText, moved, nextYear, renderAdminHome, renderLogin, rosterChoices } from "../static/js/admin.js";
@@ -262,4 +262,12 @@ test("admin sign-in: the box a phone keyboard leaves alone, and a way to it from
   assert.match(html, /spellcheck="false"/);
   assert.match(html, /name="show" type="checkbox"/);
   assert.match(ADMIN_SIGN_IN, /href="#\/admin"/);
+});
+
+test("renderUndo says Deleted, offers Undo and escapes the title", () => {
+  const html = renderUndo({ id: 7, title: `<b>"Socks"</b>` });
+  assert.match(html, /Deleted · <button[^>]*data-act="undo"[^>]*>Undo<\/button>/);
+  assert.match(html, /data-undo="7"/);
+  assert.ok(!html.includes("<b>"));
+  assert.equal(UNDO_MS, 8000);
 });
