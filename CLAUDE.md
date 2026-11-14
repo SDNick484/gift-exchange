@@ -89,10 +89,15 @@ Later modules are listed so the layout is known; add each to this file when it l
   the per-year roster; timestamps are integer epoch seconds; `participant` rows are created lazily on first save.
 - The `pairing` table keeps only `UNIQUE(edition_id, giver_id)`: a draft can hold a doubled recipient or a self-pair so
   `pairings.problems` can name it, and `pairings.mark_paired` is the one guard that an edition is paired as a complete
-  permutation. Schema is v2 (see "Schema v2" below).
+  permutation. Schema is v3 (see "Schema v2" and "Schema v3" below).
 - Schema v2: `wish_item.deleted_at INTEGER` (nullable), added by `db._to_v2` with `ALTER TABLE ... ADD COLUMN` inside
   the migrate transaction. The v1 `SCHEMA` text is never edited (a deployed v1 database was made from it); a fresh
   database runs v1 then v2. `tests/test_db.py` upgrades a populated v1 database and checks the rows survive.
+- Schema v3 (`db._to_v3`, new tables only): `draw_exclusion (edition_id, a_id, b_id)` with `CHECK (a_id < b_id)` and
+  primary key on all three (one row per unordered pair, read both ways; every reference `ON DELETE CASCADE`), and
+  `draw_preview (token PRIMARY KEY, edition_id ON DELETE CASCADE, lookback, pairs /* JSON [[giver, recipient], ...] */,
+  created_at)`. `tests/test_db.py` upgrades a populated v2 database (every old row and table definition unchanged, a
+  second migrate a no-op) and a v1 database straight to v3.
 - `SECRET_KEY` comes from the environment, else `DATA_DIR/secret.key` (32 random bytes, mode 0600, created on first start).
 - Tests: `tests/conftest.py` sets the environment before importing `app`, gives every test a fresh database, and offers
   the fixtures `client`, `con`, `seed` (one exchange, one edition, people a, b, c) and `clock` (freezes `common.now`
