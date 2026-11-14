@@ -313,7 +313,8 @@ def update_edition(con, edition_id: int, data: dict) -> dict:
 
 def set_roster(con, edition_id: int, person_ids: list[int]) -> None:
     """Replace the edition's roster. Everyone must belong to the edition's exchange (400). Dropping someone a pairing
-    of this edition names, as giver or recipient, is 409 "Remove their pairing first: <names>." and changes nothing."""
+    of this edition names, as giver or recipient, is 409 "Remove their pairing first: <names>." and changes nothing.
+    The edition's draw exclusions that name someone dropped are deleted."""
     ed = _get(con, "edition", edition_id, "No such edition.")
     if not isinstance(person_ids, list) or not all(_int_id(i) for i in person_ids):
         raise ApiError(400, "person_ids must be a list of ids.")
@@ -328,6 +329,11 @@ def set_roster(con, edition_id: int, person_ids: list[int]) -> None:
         con.execute("DELETE FROM edition_people WHERE edition_id = ?", (edition_id,))
         con.executemany("INSERT INTO edition_people (edition_id, person_id) VALUES (?, ?)",
                         [(edition_id, pid) for pid in keep])
+        # A draw exclusion naming someone who left the roster goes with them (it never blocks a roster change, and
+        # coming back doesn't bring it back).
+        con.execute("DELETE FROM draw_exclusion WHERE edition_id = ?1 AND (a_id NOT IN (SELECT person_id FROM "
+                    "edition_people WHERE edition_id = ?1) OR b_id NOT IN (SELECT person_id FROM edition_people "
+                    "WHERE edition_id = ?1))", (edition_id,))
 
 
 # ---------------------------------------------------------------- profile fields

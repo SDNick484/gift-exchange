@@ -3,6 +3,7 @@ import html
 import json
 import os
 import re
+import secrets
 from datetime import date
 from functools import wraps
 from urllib.parse import urlsplit
@@ -12,6 +13,7 @@ from werkzeug.exceptions import HTTPException
 
 import access
 import db as database
+import draw
 import exchanges
 import lists
 import pairings
@@ -382,6 +384,60 @@ def admin_mark_paired(eid):
 @admin_required
 def admin_unpair(eid):
     pairings.unpair(db(), eid)
+    return jsonify(ok=True)
+
+
+# -- the in-app draw: exclusions, preview, publish (rules in draw.py)
+MAX_EXCLUSIONS = 1000
+
+
+def _draw_options(data):
+    """{lookback: 1..3 (default 1), single_loop: bool (default false)}; anything else is 400."""
+    lookback = data.get("lookback", 1)
+    if not _is_id(lookback) or lookback not in draw.LOOKBACKS:
+        raise ApiError(400, "lookback must be 1, 2 or 3.")
+    single_loop = data.get("single_loop", False)
+    if not isinstance(single_loop, bool):
+        raise ApiError(400, "single_loop must be true or false.")
+    return lookback, single_loop
+
+
+def _exclusions_body(data):
+    """{pairs: [[person_id, person_id], ...]} as [(a, b)]."""
+    raw = data.get("pairs")
+    if not isinstance(raw, list) or len(raw) > MAX_EXCLUSIONS:
+        raise ApiError(400, "pairs must be a list.")
+    if not all(isinstance(p, list) and len(p) == 2 and all(_is_id(i) for i in p) for p in raw):
+        raise ApiError(400, "Each pair must be two person ids.")
+    return [(a, b) for a, b in raw]
+
+
+@app.post("/api/admin/editions/<int:eid>/draw")
+@admin_required
+def admin_draw(eid):
+    """{lookback, single_loop} -> {"preview": [...], "token", "expires_in"}. Writes no pairing."""
+    lookback, single_loop = _draw_options(json_body())
+    return jsonify(draw.preview(db(), eid, lookback, single_loop, secrets.SystemRandom()))
+
+
+@app.post("/api/admin/editions/<int:eid>/draw/publish")
+@admin_required
+def admin_draw_publish(eid):
+    """{token} -> {"ok": true}: the previewed draw is written and the edition marked paired."""
+    draw.publish(db(), eid, text(json_body(), "token", 100, required=True))
+    return jsonify(ok=True)
+
+
+@app.get("/api/admin/editions/<int:eid>/exclusions")
+@admin_required
+def admin_exclusions(eid):
+    return jsonify(pairs=draw.exclusions(db(), eid))
+
+
+@app.put("/api/admin/editions/<int:eid>/exclusions")
+@admin_required
+def admin_exclusions_save(eid):
+    draw.set_exclusions(db(), eid, _exclusions_body(json_body()))
     return jsonify(ok=True)
 
 
