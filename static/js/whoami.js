@@ -1,4 +1,4 @@
-// "Which one are you?": who is holding this phone, per exchange, in a plain cookie gx_me_<slug> (400 days,
+// "Who are you?": who is holding this phone, per exchange, in a plain cookie gx_me_<slug> (400 days,
 // SameSite=Lax). It is a convenience, not a security boundary: it shows "You're getting ...", puts your own list
 // first, and fills in updated_by on every save. "Just looking (parent, etc.)" stores { person_id: null, name }.
 // The cookie helpers are DOM-free so node --test can load this file.
@@ -50,8 +50,8 @@ const renderPeople = people => people.map(renderPerson).join("");
 const renderPicker = (people, current) => `
   <dialog class="picker-dialog" aria-labelledby="pickerTitle">
     <div class="picker">
-      <h1 id="pickerTitle">Which one are you?</h1>
-      <p>Tap your name. The page then shows who you're getting and puts your name on anything you change.</p>
+      <h1 id="pickerTitle">Who are you?</h1>
+      <p>Tap your name. The page then shows who you're shopping for and allows you to update your own wishlist/ideas/sizes/etc.</p>
       ${renderPeople(people)}
       <button class="btn" type="button" data-act="looking">Just looking (parent, etc.)</button>
       <form data-form="looking" hidden novalidate>

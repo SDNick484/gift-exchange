@@ -1,5 +1,5 @@
 // #/x/<slug>[?e=<edition id>]  The exchange home: the year's date, place, budget and rules, "You're getting ...",
-// who has whom (or "Names not drawn yet."), and everyone's lists. The first visit asks "Which one are you?".
+// who has whom (or "Names not drawn yet."), and everyone's lists. The first visit asks "Who are you?".
 import { get } from "./api.js";
 import { applyAccent, daysLabel, esc, eventDateLabel, money, renderOptions } from "./core.js";
 import { me, showPicker } from "./whoami.js";
