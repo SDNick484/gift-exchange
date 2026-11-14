@@ -162,6 +162,11 @@ export const renderItemDelete = it => `
     <p><strong>Delete this idea?</strong></p>
     <div class="btn-row"><button class="btn danger primary" type="button" data-act="delete-yes">Yes, delete it</button><button class="btn" type="button" data-act="delete-no">No, keep it</button></div></li>`;
 
+// "Deleted · Undo", shown for UNDO_MS after a delete. One per deleted idea, each with its own timer.
+export const UNDO_MS = 8000;
+export const renderUndo = it => `
+  <div class="msg ok undo" role="status" data-undo="${esc(it.id)}">Deleted · <button class="linkish" type="button" data-act="undo" aria-label="Undo delete of ${esc(it.title)}">Undo</button></div>`;
+
 const renderAddButton = () => `<p><button class="btn primary wide" type="button" data-act="add-open">+ Add an idea</button></p>`;
 const renderAddForm = () => `
   <h3>New idea</h3>
@@ -169,13 +174,16 @@ const renderAddForm = () => `
   <form data-form="save" novalidate>${renderItemFields({})}
     <div class="btn-row"><button class="btn primary" type="submit">Add it</button><button class="btn quiet" type="button" data-act="cancel">Done</button></div>
   </form>`;
+const renderBringOver = readOnly => (readOnly ? "" : `<p><button class="btn quiet wide" type="button" data-act="bring-over">Bring over last year's items</button></p>`);
 const renderAddArea = readOnly => (readOnly ? "" : `<div data-unit="add">${renderAddButton()}</div>`);
 const renderIdeas = readOnly => `
   <h2>Ideas</h2>
   <div data-slot="list-msg"></div>
+  <div data-slot="undo"></div>
   <ul class="rows" data-list="items"></ul>
   <p class="muted" data-empty hidden>No ideas yet.</p>
-  ${renderAddArea(readOnly)}`;
+  ${renderAddArea(readOnly)}
+  ${renderBringOver(readOnly)}`;
 
 // the 409 flow
 // The server's message and a Reload button. `typing`: a form below holds the person's text. `act`: "reload" for a
@@ -230,6 +238,8 @@ export async function render(ctx) {
   view.innerHTML = renderPage(home, page, me(slug), backHash, readOnly);
   const list = view.querySelector("[data-list=items]");
   const listMsg = view.querySelector("[data-slot=list-msg]");
+  const undoSlot = view.querySelector("[data-slot=undo]");
+  const undoTimers = new Map(); // item id -> timer that removes its "Deleted · Undo" line
   const units = {
     basics: { kind: "basics", root: view.querySelector("[data-unit=basics]"), mode: "view" },
     details: { kind: "details", root: view.querySelector("[data-unit=details]"), mode: "view" },
@@ -434,8 +444,51 @@ export async function render(ctx) {
     }
     items.delete(u.id);
     u.root.remove();
-    toast("Deleted");
+    offerUndo(itemData(u.id) ?? { id: u.id, title: "this idea" });
     await refreshQuietly(listMsg, "Deleted.");
+  }
+
+  function dropUndo(id) {
+    clearTimeout(undoTimers.get(id));
+    undoTimers.delete(id);
+    undoSlot.querySelector(`[data-undo="${id}"]`)?.remove();
+  }
+  function offerUndo(it) {
+    undoSlot.append(fromHtml(renderUndo, it));
+    undoTimers.set(it.id, setTimeout(() => dropUndo(it.id), UNDO_MS));
+  }
+  async function bringOver(btn) {
+    listMsg.innerHTML = "";
+    const who = await whoSaves();
+    if (!who) {
+      listMsg.innerHTML = renderError("Tap your name (or Just looking) first, so your name goes on the change.");
+      return;
+    }
+    btn.disabled = true;
+    let copied;
+    try {
+      ({ copied } = await send("POST", `${base}/people/${q(pid)}/bring-over`, { edition_id: page.edition_id, updated_by: who.name }));
+    } catch (err) {
+      listMsg.innerHTML = renderError(err?.status === 400 ? "There is nothing new to bring over from last year." : (err?.error ?? "Something went wrong. Try again."));
+      return;
+    } finally {
+      btn.disabled = false;
+    }
+    toast(copied === 1 ? "Brought over 1 idea" : `Brought over ${copied} ideas`);
+    await refreshQuietly(listMsg, "Brought over.");
+  }
+  async function undo(id, btn) {
+    btn.disabled = true;
+    try {
+      await send("POST", `${base}/items/${q(id)}/restore`, {});
+    } catch (err) {
+      dropUndo(id);
+      listMsg.innerHTML = renderError(err?.status === 404 ? "Too late to undo: that idea is gone for good." : (err?.error ?? "Couldn't undo. Try again."));
+      return;
+    }
+    dropUndo(id);
+    toast("Restored");
+    await refreshQuietly(listMsg, "Restored.");
   }
 
   async function move(u, step) {
@@ -473,6 +526,14 @@ export async function render(ctx) {
     if (act === "reload-list") {
       listMsg.innerHTML = "";
       await refreshQuietly(listMsg, "");
+      return;
+    }
+    if (act === "bring-over") {
+      bringOver(btn);
+      return;
+    }
+    if (act === "undo") {
+      undo(Number(btn.closest("[data-undo]").dataset.undo), btn);
       return;
     }
     const u = unitOf(btn);

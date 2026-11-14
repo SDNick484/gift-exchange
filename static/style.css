@@ -47,7 +47,7 @@ body {
   -webkit-text-size-adjust: 100%;
 }
 button, input, select, textarea { font: inherit; color: inherit; }
-a { color: var(--link); text-underline-offset: 3px; }
+a { color: var(--link); text-underline-offset: 3px; overflow-wrap: anywhere; }
 [hidden] { display: none !important; }
 :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 h1 { margin: 0; font-size: 1.6rem; line-height: 1.2; }
@@ -58,9 +58,23 @@ p { margin: 0 0 10px; }
 .small { font-size: .9rem; }
 .loading { color: var(--muted); padding: 24px 0; }
 
+/* Large text: nothing has a fixed width, grid and flex children may shrink (min-width: 0), and long words and web
+   addresses break, so the page holds at 200% browser zoom (a 360px phone is then 180 CSS px) with no sideways scroll. */
+body { overflow-wrap: break-word; }
+.view > *, .card > *, .rows > li, .field, .banner > * { min-width: 0; }
+img, svg { max-width: 100%; }
+.toast { max-width: calc(100vw - 24px); text-align: center; }
+@media (max-width: 420px) {
+  main, .top { padding-left: 12px; padding-right: 12px; }
+  .card, .banner, .notice { padding: 12px; }
+  h1 { font-size: 1.4rem; }
+  .banner .big { font-size: 1.4rem; }
+  .btn { padding-left: 12px; padding-right: 12px; }
+}
+
 /* header */
 .top {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0 12px;
   padding: calc(8px + env(safe-area-inset-top)) 16px 8px; max-width: 720px; margin: 0 auto;
 }
 .brand, .top-link {
@@ -100,10 +114,10 @@ main { max-width: 720px; margin: 0 auto; padding: 0 16px; }
 .rows > li { border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; background: var(--surface); }
 .rows > li.link-row { padding: 0; }
 .link-row > a {
-  display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 56px; padding: 10px 14px;
+  display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; min-height: 56px; padding: 10px 14px;
   color: var(--ink); text-decoration: none;
 }
-.link-row > a .go { color: var(--link); font-weight: 700; white-space: nowrap; text-decoration: underline; }
+.link-row > a .go { color: var(--link); font-weight: 700; text-decoration: underline; }
 .pairs { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
 .pairs li { padding: 6px 0; border-bottom: 1px solid var(--line); }
 .pairs li:last-child { border-bottom: 0; }
@@ -175,7 +189,7 @@ dialog::backdrop { background: rgba(0, 0, 0, .55); }
 /* admin */
 .admin-list > li { display: grid; gap: 10px; }
 details > summary { min-height: 48px; display: flex; align-items: center; font-weight: 700; cursor: pointer; }
-.share-link { font-family: ui-monospace, monospace; font-size: .9rem; }
+.share-link { font-family: ui-monospace, monospace; font-size: .9rem; overflow-wrap: anywhere; }
 .pair-row { display: grid; gap: 4px; }
 .pair-row label { font-weight: 700; }
 

@@ -43,6 +43,8 @@ def test_manifest_is_a_manifest(client):
     assert r.mimetype == "application/manifest+json"
     m = r.get_json()
     assert m["start_url"] == "/" and m["display"] == "standalone" and m["icons"]
+    sizes = {i["sizes"] for i in m["icons"] if i["purpose"] == "any"}
+    assert {"192x192", "512x512"} <= sizes and all(i["src"] == "/static/icon.svg" for i in m["icons"])
     assert '<link rel="manifest" href="/manifest.json">' in client.get("/").get_data(as_text=True)
 
 
@@ -242,3 +244,10 @@ def test_document_title_is_set_only_in_main_from_app_name():
                 assert m.group(1).strip() == "session.app_name", m.group(1)  # APP_NAME, from /api/session
         else:
             assert "document.title" not in src, f
+
+
+def test_stylesheet_holds_at_large_text():
+    css = read(os.path.join(STATIC, "style.css"))
+    assert "nowrap" not in css                                   # nothing refuses to wrap at 200% zoom
+    assert "overflow-wrap: break-word" in css and "min-width: 0" in css
+    assert not re.search(r"(?<![-\w])(width|min-width):\s*[2-9]\d\dpx", css)   # no fixed wide boxes

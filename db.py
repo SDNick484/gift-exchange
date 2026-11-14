@@ -7,9 +7,10 @@ Timestamps are integer epoch seconds; money is integer cents."""
 import sqlite3
 from contextlib import contextmanager
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
-# Version 1. Statements are separated by ";" and contain none themselves (no triggers): see _statements().
+# Version 1 (a deployed database was created from this text: never edit it, add a step to MIGRATIONS instead).
+# Statements are separated by ";" and contain none themselves (no triggers): see _statements().
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS exchange (
@@ -133,7 +134,13 @@ def _to_v1(con):
         con.execute(stmt)
 
 
-MIGRATIONS = {1: _to_v1}  # version -> step that brings version-1 up to it
+def _to_v2(con):
+    # Soft delete: set when an item is deleted, cleared by restore, purged a day later (lists.purge_deleted).
+    # ALTER ... ADD COLUMN keeps every row as it is; a populated v1 database is never rebuilt or copied.
+    con.execute("ALTER TABLE wish_item ADD COLUMN deleted_at INTEGER")
+
+
+MIGRATIONS = {1: _to_v1, 2: _to_v2}  # version -> step that brings version-1 up to it
 
 
 def migrate(con):

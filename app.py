@@ -24,11 +24,12 @@ app = Flask(__name__, static_folder=os.path.join(BASE, "static"), static_url_pat
 
 
 def init_db():
-    """Create DATA_DIR and bring the database up to the current schema. Runs at import, so at every start."""
+    """Create DATA_DIR, bring the database up to the current schema and purge items deleted over a day ago. Runs at import, so at every start."""
     os.makedirs(settings.DATA_DIR, exist_ok=True)
     con = database.connect(settings.DB_PATH)
     try:
         database.migrate(con)
+        lists.purge_deleted(con)
     finally:
         con.close()
 
@@ -514,6 +515,16 @@ def item_delete(slug, item_id):
     return jsonify(ok=True)
 
 
+@app.post("/api/x/<slug>/items/<int:item_id>/restore")
+@exchange_required
+def item_restore(slug, item_id):
+    """{} -> {"ok": true}. Undo of a delete; 404 unless the item is deleted now (and was not purged)."""
+    json_body()
+    lists.item_of(db(), g.exchange["id"], item_id, deleted=True)
+    lists.restore_item(db(), item_id)
+    return jsonify(ok=True)
+
+
 @app.put("/api/x/<slug>/people/<int:pid>/items/order")
 @exchange_required
 def items_order(slug, pid):
@@ -523,6 +534,16 @@ def items_order(slug, pid):
     _on_roster(eid, pid)
     lists.reorder(db(), eid, pid, d.get("ids"))
     return jsonify(ok=True)
+
+
+@app.post("/api/x/<slug>/people/<int:pid>/bring-over")
+@exchange_required
+def items_bring_over(slug, pid):
+    """{edition_id, updated_by} -> {"copied": n}. 400 "Nothing to bring over." when there is nothing to copy."""
+    d = json_body()
+    eid = _edition_in_body(d)
+    _on_roster(eid, pid)
+    return jsonify(copied=lists.bring_over(db(), eid, pid, lists.updated_by_of(d)))
 
 
 @app.get("/healthz")
