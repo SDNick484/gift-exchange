@@ -265,12 +265,29 @@ def test_failures_older_than_ten_minutes_do_not_count(client, con, clock):
     assert unlock(client, "pw").status_code == 200
 
 
-def test_success_clears_the_scope(client, con, clock):
-    mk_exchange(con, "adults", "pw")
+def test_exchange_success_does_not_clear_the_scope(client, con, clock):
+    mk_exchange(con, "adults", "pw"); mk_exchange(con, "work", "other")
     for _ in range(9): unlock(client, "no")
-    assert unlock(client, "pw").status_code == 200
+    assert unlock(client, "pw").status_code == 200                             # knowing one password ...
+    assert unlock(client, "no").status_code == 403
+    assert unlock(client, "other").status_code == 429                          # ... doesn't buy more guesses
+
+
+def test_good_join_link_does_not_clear_the_scope(client, con, clock):
+    a = mk_exchange(con, "adults", "pw")
     for _ in range(9): unlock(client, "no")
-    assert unlock(client, "pw").status_code == 200
+    assert client.get(f"/x/adults/join/{token_of(con, a)}").status_code == 302
+    unlock(client, "no")
+    assert unlock(client, "pw").status_code == 429
+
+
+def test_admin_success_clears_the_admin_scope(client, clock):
+    for _ in range(9):
+        assert client.post("/api/admin/login", json={"password": "no"}, headers=mut()).status_code == 403
+    assert client.post("/api/admin/login", json={"password": "admin-pass"}, headers=mut()).status_code == 200
+    for _ in range(9):
+        assert client.post("/api/admin/login", json={"password": "no"}, headers=mut()).status_code == 403
+    assert client.post("/api/admin/login", json={"password": "admin-pass"}, headers=mut()).status_code == 200
 
 
 def test_join_link_shares_the_exchange_scope(client, con, clock):

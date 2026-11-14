@@ -13,7 +13,8 @@ clear a cookie.
 - Cookie `gx_admin`: salt "admin", payload {"a": 1}, valid 12 hours and re-issued on each admin request.
 - Throttle: per scope ("exchange" or "admin"), never per client IP (behind the tunnel every request comes from
   loopback and no client-supplied IP header is trusted). A scope is throttled while it has at least MAX_FAILURES
-  failures in the last WINDOW seconds and the newest is under LOCKOUT seconds old.
+  failures in the last WINDOW seconds and the newest is under LOCKOUT seconds old. Success clears only "admin"
+  (one password); "exchange" failures just age out, or one exchange's password could reset guesses at another's.
 
 Both signers take their timestamp from common.now(), so tests move the clock. `settings` is imported inside the
 functions that need it: importing settings creates DATA_DIR/secret.key, and `manage.py hash-password` must not."""

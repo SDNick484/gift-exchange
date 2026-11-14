@@ -111,7 +111,9 @@ Later modules are listed so the layout is known; add each to this file when it l
   re-issued by `admin_required`. Both `HttpOnly`, `Secure`, path `/`, timestamped by `common.now()`. Changing a
   password must bump `password_version` (revokes cookie entries) and regenerate `link_token`.
 - Throttle: scopes `exchange` (password box and join links) and `admin`, never per IP. Throttled while ≥10 failures in
-  the last 600 s and the newest is under 300 s old; throttled attempts get 429 and aren't recorded; success clears.
+  the last 600 s and the newest is under 300 s old; throttled attempts get 429 and aren't recorded. A good password or link never clears `exchange` (one counter
+  covers every exchange, so clearing would let one exchange's password reset guesses at another's); admin success
+  clears `admin`, which has a single password.
 - Routes for an exchange use `@exchange_required` (view gets `slug`; the row is `g.exchange`); admin routes use
   `@admin_required`. Both sit under the `@app.get/post` line.
 - Admin structure (`exchanges.py`; every `/api/admin/` route is `@admin_required`): creates return 201 `{"id"}`,
