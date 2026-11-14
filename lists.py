@@ -257,6 +257,38 @@ def purge_deleted(con) -> int:
                            (common.now() - PURGE_AFTER,)).rowcount
 
 
+def bring_over(con, edition_id: int, person_id: int, updated_by: str) -> int:
+    """Copy title, url and note of the person's items from the newest earlier edition (by year, same exchange) whose
+    roster had them, to the end of their list for edition_id. Skips titles already on the list, case-insensitively.
+    400 when nothing is left to bring. The caller has checked scope and roster. Returns the number copied."""
+    with transaction(con):
+        _open(con, edition_id)
+        src = con.execute("SELECT e.id FROM edition e JOIN edition t ON t.id = ? AND t.exchange_id = e.exchange_id "
+                          "AND e.year < t.year JOIN edition_people ep ON ep.edition_id = e.id AND ep.person_id = ? "
+                          "ORDER BY e.year DESC LIMIT 1", (edition_id, person_id)).fetchone()
+        mine = {r[0].casefold() for r in con.execute(
+            "SELECT title FROM wish_item WHERE edition_id = ? AND person_id = ? AND deleted_at IS NULL",
+            (edition_id, person_id))}
+        fresh = []
+        if src is not None:
+            for r in con.execute("SELECT title, url, note FROM wish_item WHERE edition_id = ? AND person_id = ? "
+                                 "AND deleted_at IS NULL ORDER BY sort_order, id", (src[0], person_id)):
+                if r["title"].casefold() not in mine:
+                    mine.add(r["title"].casefold())  # a title repeated last year is brought once
+                    fresh.append(r)
+        if not fresh:
+            raise ApiError(400, "Nothing to bring over.")
+        now = common.now()
+        last = con.execute("SELECT COALESCE(MAX(sort_order), -1) FROM wish_item WHERE edition_id = ? AND person_id = ? "
+                           "AND deleted_at IS NULL", (edition_id, person_id)).fetchone()[0]
+        con.executemany(
+            "INSERT INTO wish_item (edition_id, person_id, title, url, note, sort_order, created_at, updated_at, "
+            "updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [(edition_id, person_id, r["title"], r["url"], r["note"], last + 1 + n, now, now, updated_by)
+             for n, r in enumerate(fresh)])
+    return len(fresh)
+
+
 def reorder(con, edition_id: int, person_id: int, ids: list[int]) -> None:
     """Renumber the person's items for the edition in this order. ids must name each of them exactly once. An id
     that isn't an item of this exchange is 404; a list that otherwise doesn't match what is stored (an item added

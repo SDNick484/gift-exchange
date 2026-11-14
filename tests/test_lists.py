@@ -368,3 +368,70 @@ def test_start_up_purges(family, fx, clock):
     clock.advance(86401)
     a_.init_db()
     assert fx.con.execute("SELECT COUNT(*) FROM wish_item").fetchone()[0] == 0
+
+# ---------------------------------------------------------------- bring over last year's items
+def _bring(client, fx, edition, pid=None, **extra):
+    return client.post(f"/api/x/{fx.slug}/people/{pid or fx.sam}/bring-over",
+                       json={"edition_id": edition, "updated_by": "Sam", **extra})
+
+
+def _titles(client, fx, pid=None, edition=None):
+    q = f"?edition={edition}" if edition else ""
+    return [i["title"] for i in client.get(f"/api/x/{fx.slug}/people/{pid or fx.sam}{q}").get_json()["items"]]
+
+
+
+
+def test_bring_over_copies_last_years_items_once(family, admin, fx):
+    add_item(family, fx, fx.sam, "Socks"); add_item(family, fx, fx.sam, "Mug")
+    e27 = admin.post(f"/api/admin/exchanges/{fx.id}/editions", json={"year": 2027, "copy_roster": True}).get_json()["id"]
+    add_item(family, fx, fx.sam, "socks", edition=e27)
+    r = family.post(f"/api/x/{fx.slug}/people/{fx.sam}/bring-over", json={"edition_id": e27, "updated_by": "Sam"})
+    assert r.get_json()["copied"] == 1
+    assert family.post(f"/api/x/{fx.slug}/people/{fx.sam}/bring-over", json={"edition_id": e27, "updated_by": "Sam"}).status_code == 400
+
+
+def test_bring_over_copies_fields_in_order_to_the_end(family, admin, fx):
+    add_item(family, fx, fx.sam, "Socks", url="amazon.com/s", note="blue"); add_item(family, fx, fx.sam, "Mug")
+    e27 = mk_edition(admin, fx.id, 2027); put_roster(admin, e27, [fx.sam])
+    add_item(family, fx, fx.sam, "Book", edition=e27)
+    assert _bring(family, fx, e27).get_json() == {"copied": 2}
+    page = family.get(f"/api/x/{fx.slug}/people/{fx.sam}?edition={e27}").get_json()
+    assert [i["title"] for i in page["items"]] == ["Book", "Socks", "Mug"]
+    socks = page["items"][1]
+    assert (socks["url"], socks["note"], socks["version"], socks["updated_by"]) == ("https://amazon.com/s", "blue", 1, "Sam")
+    assert _titles(family, fx, edition=fx.edition) == ["Socks", "Mug"]  # last year's list is untouched
+
+
+def test_bring_over_uses_the_newest_earlier_edition_the_person_was_on(family, admin, fx):
+    add_item(family, fx, fx.sam, "From 2026")
+    e27 = mk_edition(admin, fx.id, 2027); put_roster(admin, e27, [fx.alex])          # Sam not on 2027
+    e28 = mk_edition(admin, fx.id, 2028); put_roster(admin, e28, [fx.sam])
+    add_item(family, fx, fx.alex, "Alex 2027", edition=e27)
+    e29 = mk_edition(admin, fx.id, 2029); put_roster(admin, e29, [fx.sam])
+    assert _bring(family, fx, e29).status_code == 400                                 # 2028 had Sam but no items
+    add_item(family, fx, fx.sam, "From 2028", edition=e28)
+    assert _bring(family, fx, e29).get_json() == {"copied": 1}
+    assert _titles(family, fx, edition=e29) == ["From 2028"]
+    assert _bring(family, fx, e28).get_json() == {"copied": 1}                        # only earlier years count
+    assert _titles(family, fx, edition=e28) == ["From 2028", "From 2026"]
+
+
+def test_bring_over_with_no_earlier_edition_is_400(family, fx):
+    r = _bring(family, fx, fx.edition)
+    assert r.status_code == 400 and r.get_json()["error"] == "Nothing to bring over."
+
+
+def test_bring_over_scoping_closed_and_shape(family, admin, fx, other):
+    add_item(family, fx, fx.sam, "Socks")
+    e27 = mk_edition(admin, fx.id, 2027); put_roster(admin, e27, [fx.alex])
+    assert _bring(family, fx, e27).status_code == 404                                 # Sam isn't on 2027
+    assert _bring(family, fx, other.edition).status_code == 404                       # another exchange's edition
+    assert _bring(family, fx, e27, pid=other.alex).status_code == 404
+    put_roster(admin, e27, [fx.sam])
+    assert family.post(f"/api/x/{fx.slug}/people/{fx.sam}/bring-over", json={"edition_id": e27}).status_code == 400
+    assert family.post(f"/api/x/{fx.slug}/people/{fx.sam}/bring-over", json={"updated_by": "Sam"}).status_code == 400
+    admin.patch(f"/api/admin/editions/{e27}", json={"status": "closed"})
+    r = _bring(family, fx, e27)
+    assert (r.status_code, r.get_json()["error"]) == (423, "This year is closed.")
+    assert _titles(family, fx, edition=e27) == []

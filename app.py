@@ -526,6 +526,16 @@ def items_order(slug, pid):
     return jsonify(ok=True)
 
 
+@app.post("/api/x/<slug>/people/<int:pid>/bring-over")
+@exchange_required
+def items_bring_over(slug, pid):
+    """{edition_id, updated_by} -> {"copied": n}. 400 "Nothing to bring over." when there is nothing to copy."""
+    d = json_body()
+    eid = _edition_in_body(d)
+    _on_roster(eid, pid)
+    return jsonify(copied=lists.bring_over(db(), eid, pid, lists.updated_by_of(d)))
+
+
 @app.get("/healthz")
 def healthz():
     return jsonify(ok=True)
