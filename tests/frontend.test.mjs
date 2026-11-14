@@ -4,6 +4,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { cleanMe, meCookie, parseMe } from "../static/js/whoami.js";
+import {
+  freshValues, lastText, lastUpdate, mergeFresh, profileBody, renderBasicsView, renderConflict, renderItemView, renderReloaded,
+  savedRows, stamps,
+} from "../static/js/person.js";
 import { factsOf, ideasLabel, personHash, renderHome, youFirst, youreGetting } from "../static/js/home.js";
 import { dayLabel, daysLabel, esc, eventDateLabel, hostLabel, inkFor, isStale, monthLabel, money, parseHash, validAccent } from "../static/js/core.js";
 
@@ -144,4 +148,72 @@ test("home: names not drawn yet, and no banner for just looking", () => {
   assert.ok(html.includes("Names not drawn yet."));
   assert.ok(!html.includes("You're getting"));
   assert.ok(html.includes("(just looking)"));
+});
+
+const STALE = "Someone else just changed this list. Reload to see it.";
+const NOW = Math.floor(Date.now() / 1000);
+const PAGE = {
+  person: { id: 2, name: "Sam" }, edition_id: 7, about: "Likes <tea>", amazon_url: "https://www.amazon.com/hz/wishlist/ls/ABC123",
+  version: 3, updated_at: NOW - 3 * 86400, updated_by: "Sam",
+  profile: [
+    { field_id: 11, label: "Shirt size", hint: null, value: "M", updated_at: NOW - 200 * 86400, updated_by: "Sam" },
+    { field_id: 12, label: "Shoe size", hint: null, value: "9 <b>", updated_at: NOW - 10 * 86400, updated_by: "Alex" },
+    { field_id: 13, label: "Please avoid", hint: "dislikes", value: null, updated_at: null, updated_by: null },
+  ],
+  items: [{ id: 5, title: "Socks <x>", url: "https://shop.example.com/s", note: "wool", version: 2, updated_at: NOW - 86400, updated_by: "Riley" }],
+};
+
+test("person: the basics show filled fields, dimmed when stale", () => {
+  const html = renderBasicsView(PAGE);
+  assert.ok(html.includes("Shirt size") && html.includes("Shoe size") && !html.includes("Please avoid"));
+  assert.ok(html.includes("9 &lt;b&gt;") && !html.includes("<b>"));
+  assert.match(html, /<div class="stale"><dt>Shirt size<\/dt>.*may be out of date/);
+  assert.match(html, /<div class=""><dt>Shoe size<\/dt><dd>9 &lt;b&gt;<\/dd><dd class="when">updated [A-Z][a-z]{2} \d{4}<\/dd>/);
+});
+
+test("person: an idea links out by host, escaped", () => {
+  const html = renderItemView(PAGE.items[0], false, 0, 1);
+  assert.ok(html.includes('target="_blank" rel="noopener noreferrer">Open link · shop.example.com</a>'));
+  assert.ok(html.includes("Socks &lt;x&gt;") && !html.includes("<x>"));
+  assert.ok(html.includes('data-act="delete"') && !html.includes('data-act="up"') && !html.includes('data-act="down"'));
+  assert.ok(!renderItemView(PAGE.items[0], true, 0, 1).includes("data-act"));
+});
+
+test("person: the last change on the page", () => {
+  assert.deepEqual(lastUpdate(PAGE), { at: NOW - 86400, by: "Riley" });
+  assert.match(lastText(PAGE), /^Last updated by Riley, [A-Z][a-z]{2} \d{1,2}$/);
+  assert.equal(lastText({ ...PAGE, updated_at: null, items: [], profile: [] }), "");
+});
+
+test("person: a profile save sends only the fields typed in", () => {
+  const orig = { f11: "M", f12: "9 <b>", f13: "" };
+  const body = profileBody({ f11: "L", f12: "9 <b>", f13: "" }, orig, stamps(PAGE.profile));
+  assert.deepEqual(body, { values: { 11: "L" }, expected: { 11: NOW - 200 * 86400 } });
+  assert.deepEqual(profileBody({ f13: "nuts" }, orig, stamps(PAGE.profile)), { values: { 13: "nuts" }, expected: { 13: null } });
+  assert.deepEqual(profileBody(orig, orig, {}), { values: {}, expected: {} });
+});
+
+test("person: Reload keeps typed fields and refreshes the untouched ones", () => {
+  const orig = { title: "Socks", url: "", note: "wool" };
+  const typed = { title: "Warm socks", url: "", note: "wool" };
+  const fresh = { title: "Socks", url: "https://shop.example.com/s", note: "merino" };
+  const m = mergeFresh(typed, orig, fresh);
+  assert.deepEqual(m.set, { url: "https://shop.example.com/s", note: "merino" });
+  assert.deepEqual(m.orig, { title: "Socks", url: "https://shop.example.com/s", note: "merino" });
+  assert.deepEqual(m.touched, ["title"]);
+  assert.deepEqual(freshValues("item", PAGE, 5), { title: "Socks <x>", url: "https://shop.example.com/s", note: "wool" });
+  assert.equal(freshValues("item", PAGE, 99), null);
+  assert.deepEqual(freshValues("details", PAGE), { about: "Likes <tea>", amazon_url: "https://www.amazon.com/hz/wishlist/ls/ABC123" });
+  assert.deepEqual(savedRows("basics", PAGE, freshValues("basics", PAGE), ["f12"]), [{ label: "Shoe size", value: "9 <b>" }]);
+});
+
+test("person: the 409 box shows the server's message and Reload, escaped", () => {
+  const html = renderConflict(STALE, true);
+  assert.ok(html.includes(STALE) && html.includes('data-act="reload"') && html.includes("Your typing is still in the form below"));
+  assert.ok(renderConflict("<i>", false, "reload-list").includes('&lt;i&gt;</p>'));
+  assert.ok(!renderConflict(STALE, false).includes("Your typing"));
+  const reloaded = renderReloaded([{ label: "Note", value: "<img src=x>" }, { label: "Link", value: "" }], false);
+  assert.ok(reloaded.includes("Here's what's saved now") && reloaded.includes("&lt;img src=x&gt;") && reloaded.includes("(empty)"));
+  assert.ok(reloaded.includes('data-act="use-saved"') && !reloaded.includes("<img"));
+  assert.ok(renderReloaded([], true).includes("deleted on another phone"));
 });

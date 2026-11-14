@@ -12,6 +12,7 @@ function pick(parts) {
   if (parts.length === 0) return () => import("./unlock.js");
   if (parts[0] === "x" && SLUG.test(parts[1] ?? "")) {
     if (parts.length === 2) return () => import("./home.js");
+    if (parts.length === 4 && parts[2] === "p" && ID.test(parts[3])) return () => import("./person.js");
   }
   return null;
 }

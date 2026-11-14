@@ -65,7 +65,8 @@ static/           index.html (the shell; GET / fills in __APP_NAME__), style.css
                   name and short_name), icon.svg, robots.txt
 static/js/        hash-routed ES modules, no build step: main.js (router, header), core.js (esc and formatting, no DOM
                   at import), api.js (get/send; a 403 `locked` fires the unlock box), unlock.js (#/, the password box),
-                  whoami.js (gx_me_<slug> cookie and the "Which one are you?" picker), home.js (#/x/<slug>)
+                  whoami.js (gx_me_<slug> cookie and the "Which one are you?" picker), home.js (#/x/<slug>),
+                  person.js (#/x/<slug>/p/<pid>)
 tests/            conftest.py + one test file per module; test_frontend.py (shell, CSP and escaping scans over static/),
                   frontend.test.mjs (node --test)
 installer/ deploy/ ops/                                                                   (Task 8)
@@ -150,3 +151,8 @@ Later modules are listed so the layout is known; add each to this file when it l
   - `core.js` touches no `document`/`window` at import so `node --test` can load it.
   - `document.title` is set only in `main.js`, from `/api/session`'s `app_name`.
   - Links out are `target="_blank" rel="noopener noreferrer"` with the text `Open link · <hostLabel>` (`core.renderLink`).
+  - Nothing typed is lost (review focus 3, `person.js`): each part of a person's page is a unit with its own form, and
+    a save or Reload redraws only units not being edited. On 409 the form stays as typed under the server's message
+    and a Reload button; Reload refetches, shows what's saved, and moves untouched fields to the fresh values while
+    keeping typed ones, until the person picks "Save mine instead" or "Use what's saved". A profile save sends only
+    the fields that were typed in. Never re-render a whole screen after a save.

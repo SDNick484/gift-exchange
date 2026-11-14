@@ -58,7 +58,7 @@ const renderHead = h => `
   </section>`;
 
 const renderWhoName = who => (who.person_id === null ? `<strong>${esc(who.name)}</strong> (just looking)` : `<strong>${esc(who.name)}</strong>`);
-const renderWho = who => (who
+export const renderWho = who => (who
   ? `<p class="who"><span>You're ${renderWhoName(who)}</span><button class="linkish" type="button" data-act="notme">Not you?</button></p>`
   : `<p class="who"><button class="linkish" type="button" data-act="notme">Tell us which one you are</button></p>`);
 
