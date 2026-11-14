@@ -16,6 +16,7 @@ function pick(parts) {
   }
   if (parts[0] === "admin") {
     if (parts.length === 4 && parts[1] === "e" && ID.test(parts[2]) && parts[3] === "pairings") return () => import("./admin-pairings.js");
+    if (parts.length === 4 && parts[1] === "e" && ID.test(parts[2]) && parts[3] === "draw") return () => import("./admin-draw.js");
     if (parts.length === 1 || (parts.length === 3 && parts[1] === "x" && ID.test(parts[2]))) return () => import("./admin.js");
   }
   return null;

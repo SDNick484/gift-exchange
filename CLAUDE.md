@@ -70,7 +70,7 @@ static/js/        hash-routed ES modules, no build step: main.js (router, header
                   at import), api.js (get/send; a 403 `locked` fires the unlock box), unlock.js (#/, the password box),
                   whoami.js (gx_me_<slug> cookie and the "Which one are you?" picker), home.js (#/x/<slug>),
                   person.js (#/x/<slug>/p/<pid>), admin.js (#/admin, #/admin/x/<id>),
-                  admin-pairings.js (#/admin/e/<id>/pairings)
+                  admin-pairings.js (#/admin/e/<id>/pairings), admin-draw.js (#/admin/e/<id>/draw)
 tests/            conftest.py + one test file per module; test_frontend.py (shell, CSP and escaping scans over static/),
                   frontend.test.mjs (node --test)
 installer/        setup-head.sh (the installer's text, with a __DEPLOY_DEFAULTS__ marker), build.sh (head + base64 tarball of
@@ -205,6 +205,10 @@ Later modules are listed so the layout is known; add each to this file when it l
   - Links out are `target="_blank" rel="noopener noreferrer"` with the text `Open link · <hostLabel>` (`core.renderLink`).
   - Undo and bring-over (`person.js`): a delete shows "Deleted · Undo" in its own `[data-slot=undo]` for `UNDO_MS` (8 s),
     one line and timer per idea; "Bring over last year's items" sits under Add an idea and is hidden in a closed year.
+  - Draw screen (`admin-draw.js`, linked from the pairings screen): exclusions save on Add/Remove; a look-back select
+    (1 to 3, default 1) and a single-loop checkbox; the preview lists names with Redraw and Publish, and any change to
+    the rules or options drops it. Hidden with `drawBlocked(overview)`'s reason unless the year is open with no rows.
+    Publish goes back to `#/admin/e/<id>/pairings`.
   - Large text: `style.css` has no `nowrap` and no fixed wide boxes, children of grids/flex may shrink (`min-width: 0`)
     and long words and addresses wrap, so 200% zoom has no sideways scroll (`tests/test_frontend.py` guards the rules).
   - PWA: `manifest.json` is `display: standalone` with `static/icon.svg` listed at 192x192, 512x512 and `any`
