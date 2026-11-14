@@ -39,11 +39,14 @@ const renderSlot = () => `<div data-slot="msg"></div>`;
 const renderSaveRow = label => `<div class="btn-row"><button class="btn primary" type="submit">${esc(label)}</button></div>`;
 const renderInactive = (on, word = "hidden") => (on ? "" : ` (${esc(word)})`);
 
-const renderLogin = () => `
+// Same input settings as the family's password box: a phone keyboard must not capitalize or "correct" a password.
+export const renderLogin = () => `
   <form class="card" data-form="login" novalidate>
     <h1>Admin</h1>
     <p>For the organizer only. Family members don't need this.</p>
-    <label class="field"><span>Admin password</span><input name="password" type="password" autocomplete="current-password" required></label>
+    <label class="field"><span>Admin password</span>
+      <input name="password" type="password" autocomplete="current-password" autocapitalize="none" spellcheck="false" required></label>
+    <label class="check"><input name="show" type="checkbox"> Show the password as I type</label>
     ${renderSlot()}
     <button class="btn primary wide" type="submit">Sign in</button>
   </form>`;
@@ -149,7 +152,7 @@ const renderEdition = (e, people, open) => `
       <label class="field"><span>Label</span><input name="label" type="text" maxlength="40" value="${esc(e.label)}"></label>
       <label class="field"><span>Budget</span><span class="hint">Such as 50 or 25.00. Empty for none.</span>
         <input name="budget" type="text" inputmode="decimal" value="${esc(centsToText(e.budget_cents))}"></label>
-      <label class="field"><span>Date of the exchange</span><input name="event_date" type="date" value="${esc(e.event_date)}"></label>
+      <label class="field"><span>Gift exchange day</span><input name="event_date" type="date" value="${esc(e.event_date)}"></label>
       <label class="field"><span>Where</span><input name="location" type="text" maxlength="200" value="${esc(e.location)}"></label>
       <label class="field"><span>Rules</span><textarea name="rules" rows="3" maxlength="2000">${esc(e.rules)}</textarea></label>
       ${renderStatus(e)}
@@ -234,6 +237,8 @@ async function attempt(slot, button, change) {
 function showLogin(ctx) {
   ctx.view.innerHTML = renderLogin();
   const form = ctx.view.querySelector("form");
+  const input = form.elements.password;
+  form.elements.show.addEventListener("change", () => { input.type = form.elements.show.checked ? "text" : "password"; });
   form.addEventListener("submit", async e => {
     e.preventDefault();
     const okay = await attempt(form.querySelector("[data-slot=msg]"), form.querySelector("button"),
