@@ -10,8 +10,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DENYLIST = os.path.join(ROOT, "tests", "hygiene_denylist.txt")
 EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,})")
 URL = re.compile(r"https?://(?:[^\s/@:]*@)?([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)", re.I)
-# amazon.com: public wishlist URLs in the docs and tests. 127.0.0.1 and the RFC 5737 documentation ranges are not hosts of anyone.
-ALLOWED = ("example.com", "noreply.github.com", "github.com", "cloudflare.com", "amazon.com", "127.0.0.1")
+# amazon.com: public wishlist URLs in the docs and tests. www.w3.org: the SVG namespace name static/icon.svg must carry
+# (an identifier, never fetched). 127.0.0.1 and the RFC 5737 documentation ranges are not hosts of anyone.
+ALLOWED = ("example.com", "noreply.github.com", "github.com", "cloudflare.com", "amazon.com", "www.w3.org", "127.0.0.1")
 DOC_IPS = ("192.0.2.", "198.51.100.", "203.0.113.")
 # Only used when git is unavailable (a source tarball): mirrors .gitignore closely enough for a test.
 SKIP_DIRS = {".git", ".venv", "venv", "data", "dist", "__pycache__", ".pytest_cache", ".ruff_cache", "node_modules"}

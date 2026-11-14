@@ -49,11 +49,11 @@ jobs:
           node --version
           for f in static/js/*.js; do node --check "$f"; done
       # No tests/*.test.mjs exists until the frontend task; the step passes until then.
-      - name: node --test tests/
+      - name: node --test tests/*.test.mjs
         run: |
           shopt -s nullglob
           files=(tests/*.test.mjs)
-          if [ ${#files[@]} -eq 0 ]; then echo "no tests/*.test.mjs yet"; else node --test tests/; fi
+          if [ ${#files[@]} -eq 0 ]; then echo "no tests/*.test.mjs yet"; else node --test "${files[@]}"; fi
 
   alpine:
     # The container runs on Alpine's own py3-* packages, so test against exactly those.
