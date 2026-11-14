@@ -1,6 +1,6 @@
 """The shell around the frontend (GET / and GET /manifest.json) and static checks over static/ that keep the
 Content-Security-Policy (no inline script, no inline style, no inline handlers) and the escaping rule true as screens
-are added. The JavaScript's own unit tests are tests/frontend.test.mjs (`node --test tests/`)."""
+are added. The JavaScript's own unit tests are tests/frontend.test.mjs (`node --test tests/*.test.mjs`)."""
 import glob
 import json
 import os

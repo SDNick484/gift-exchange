@@ -9,7 +9,7 @@ keeps per-person sizes, favorites and wishlists, behind one shared password. Spe
 
 ```
 python -m pytest -q
-node --test tests/                                  # tests/frontend.test.mjs: the DOM-free helpers in static/js/
+node --test tests/*.test.mjs                        # tests/frontend.test.mjs: the DOM-free helpers in static/js/
 for f in static/js/*.js; do node --check "$f"; done
 ruff check
 python3 app.py                                      # dev server on 127.0.0.1:8770
