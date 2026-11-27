@@ -13,7 +13,9 @@ import {
   drawBody, exclusionPairs, LOOKBACKS, pairProblem, personChoices, renderBlocked, renderExclusions, renderPreview, renderScreen as renderDrawScreen,
   withoutIndex, withPair,
 } from "../static/js/admin-draw.js";
-import { centsToText, moved, nextYear, renderAdminHome, renderLogin, rosterChoices } from "../static/js/admin.js";
+import {
+  centsToText, moved, nextYear, renderAdminHome, renderField, renderLogin, renderPerson, rosterChoices,
+} from "../static/js/admin.js";
 import { ADMIN_SIGN_IN } from "../static/js/unlock.js";
 import { factsOf, ideasLabel, personHash, renderHome, youFirst, youreGetting } from "../static/js/home.js";
 import { dayLabel, daysLabel, esc, eventDateLabel, hostLabel, inkFor, isStale, monthLabel, money, parseHash, validAccent } from "../static/js/core.js";
@@ -324,4 +326,12 @@ test("draw markup escapes every name", () => {
     assert.match(html, /&lt;img/);
   }
   assert.match(renderExclusions([]), /None yet/);
+});
+
+// A row's Save shows failures in the [data-slot=msg] inside its own <details>; without one the submit handler threw
+// before sending anything, so editing a person or a field silently did nothing.
+test("admin rows that save have their own message slot", () => {
+  const slot = /<details[^>]*>[\s\S]*?data-slot="msg"[\s\S]*?<form data-form=/;
+  assert.match(renderPerson({ id: 2, name: "Sam", household: null, active: true }), slot);
+  assert.match(renderField({ id: 5, label: "Shirt size", hint: null, active: true }, 0, 1), slot);
 });
