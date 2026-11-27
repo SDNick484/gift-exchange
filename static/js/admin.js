@@ -115,8 +115,9 @@ const renderAccess = (x, url) => `
 
 // people
 const renderHousehold = p => (p.household ? ` · ${esc(p.household)}` : "");
-const renderPerson = p => `
+export const renderPerson = p => `
   <li><details data-id="${esc(p.id)}"><summary>${esc(p.name)}${renderHousehold(p)}${renderInactive(p.active, "not taking part")}</summary>
+    ${renderSlot()}
     <form data-form="person" data-id="${esc(p.id)}" novalidate>
       <label class="field"><span>Name</span><input name="name" type="text" maxlength="80" value="${esc(p.name)}"></label>
       <label class="field"><span>Household</span><span class="hint">Same label, same household: the pairings warn about those.</span>
@@ -180,8 +181,9 @@ const renderEditions = (editions, people, openIds) => `
 // profile fields
 const renderFieldUp = (f, pos) => (pos > 0 ? `<button class="btn quiet" type="button" data-act="field-up" data-id="${esc(f.id)}">↑ Up</button>` : "");
 const renderFieldDown = (f, pos, count) => (pos < count - 1 ? `<button class="btn quiet" type="button" data-act="field-down" data-id="${esc(f.id)}">↓ Down</button>` : "");
-const renderField = (f, pos, count) => `
+export const renderField = (f, pos, count) => `
   <li><details data-id="${esc(f.id)}"><summary>${esc(f.label)}${renderInactive(f.active)}</summary>
+    ${renderSlot()}
     <form data-form="field" data-id="${esc(f.id)}" novalidate>
       <label class="field"><span>Label</span><input name="label" type="text" maxlength="60" value="${esc(f.label)}"></label>
       <label class="field"><span>Hint (optional)</span><input name="hint" type="text" maxlength="200" value="${esc(f.hint)}"></label>
