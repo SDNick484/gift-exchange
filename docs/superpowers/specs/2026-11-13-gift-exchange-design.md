@@ -231,7 +231,9 @@ Everyone's lists
 
 **`/<slug>/p/<person_id>`: a participant's page**
 
-- Name, then **The basics**: the profile fields that have values, each with its "updated"
+- Name, with a note saying whose page it is for this phone (your own, the person you're getting, or someone
+  else's, with a link to your own list), then **The basics** (headed "Your sizes and favorites" or "Sam's sizes and
+  favorites"): the profile fields that have values, each with its "updated"
   date. Then "Anything else" (`about`) and an **Amazon list** button when `amazon_url` is set.
 - Wish items come below that, under **Ideas**.
 - Items, each showing the title, an "Open link" button showing the link's hostname, and the

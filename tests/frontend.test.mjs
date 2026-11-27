@@ -5,8 +5,8 @@ import { test } from "node:test";
 
 import { cleanMe, meCookie, parseMe } from "../static/js/whoami.js";
 import {
-  freshValues, lastText, lastUpdate, mergeFresh, profileBody, renderBasicsView, renderConflict, renderItemView, renderReloaded,
-  savedRows, stamps, UNDO_MS, renderUndo,
+  freshValues, lastText, lastUpdate, mergeFresh, ownerOf, profileBody, renderBasicsView, renderConflict, renderDetailsView,
+  renderItemView, renderReloaded, renderWhose, savedRows, stamps, UNDO_MS, renderUndo,
 } from "../static/js/person.js";
 import { choicesFor, chosenOf, drawBlocked, pairsBody, renderChecks, renderDrawLink, rosterOf } from "../static/js/admin-pairings.js";
 import {
@@ -17,7 +17,7 @@ import {
   centsToText, moved, nextYear, renderAdminHome, renderField, renderLogin, renderPerson, rosterChoices,
 } from "../static/js/admin.js";
 import { ADMIN_SIGN_IN } from "../static/js/unlock.js";
-import { factsOf, ideasLabel, personHash, renderHome, youFirst, youreGetting } from "../static/js/home.js";
+import { factsOf, ideasLabel, myListOf, personHash, renderHome, youFirst, youreGetting } from "../static/js/home.js";
 import { dayLabel, daysLabel, esc, eventDateLabel, hostLabel, inkFor, isStale, monthLabel, money, parseHash, validAccent } from "../static/js/core.js";
 
 test("esc", () => assert.equal(esc(`<a href="x">'&`), "&lt;a href=&quot;x&quot;&gt;&#39;&amp;"));
@@ -334,4 +334,50 @@ test("admin rows that save have their own message slot", () => {
   const slot = /<details[^>]*>[\s\S]*?data-slot="msg"[\s\S]*?<form data-form=/;
   assert.match(renderPerson({ id: 2, name: "Sam", household: null, active: true }), slot);
   assert.match(renderField({ id: 5, label: "Shirt size", hint: null, active: true }, 0, 1), slot);
+});
+
+// Whose page is this: your own, the person you're getting, or someone else's (also when just looking or not picked).
+const SAM_PAIRS = [{ giver_id: 1, giver: "Alex", recipient_id: 2, recipient: "Sam" }, { giver_id: 2, giver: "Sam", recipient_id: 1, recipient: "Alex" }];
+test("person: ownerOf tells your page from the person you're getting and everyone else", () => {
+  const roster = [{ id: 1, name: "Alex" }, { id: 2, name: "Sam" }, { id: 3, name: "Jordan" }];
+  assert.deepEqual(ownerOf(PAGE.person, { person_id: 2, name: "Sam" }, SAM_PAIRS, roster), { kind: "you", name: "Sam", mine: null });
+  assert.deepEqual(ownerOf(PAGE.person, { person_id: 1, name: "Alex" }, SAM_PAIRS, roster), { kind: "getting", name: "Sam", mine: 1 });
+  assert.deepEqual(ownerOf(PAGE.person, { person_id: 3, name: "Jordan" }, SAM_PAIRS, roster), { kind: "other", name: "Sam", mine: 3 });
+  assert.deepEqual(ownerOf(PAGE.person, { person_id: null, name: "Riley" }, SAM_PAIRS, roster), { kind: "other", name: "Sam", mine: null });
+  assert.deepEqual(ownerOf(PAGE.person, null, null, roster), { kind: "other", name: "Sam", mine: null });
+  // Someone picked on this phone but off this year's roster has no list of their own to link to.
+  assert.deepEqual(ownerOf(PAGE.person, { person_id: 9, name: "Casey" }, SAM_PAIRS, roster), { kind: "other", name: "Sam", mine: null });
+});
+
+test("person: headings and edit buttons say whose sizes and links they are", () => {
+  const you = { kind: "you", name: "Sam", mine: null };
+  const them = { kind: "getting", name: "Sam", mine: 1 };
+  assert.ok(renderBasicsView(PAGE, you).includes("Your sizes and favorites") && renderBasicsView(PAGE, you).includes("Edit your sizes and favorites"));
+  assert.ok(renderBasicsView(PAGE, them).includes("Sam&#39;s sizes and favorites") && renderBasicsView(PAGE, them).includes("Edit Sam&#39;s sizes and favorites"));
+  assert.ok(renderDetailsView(PAGE, false, you).includes("Your Amazon list") && renderDetailsView(PAGE, false, you).includes("Edit this and your Amazon link"));
+  assert.ok(renderDetailsView(PAGE, false, them).includes("Sam&#39;s Amazon list") && renderDetailsView(PAGE, false, them).includes("Edit this and Sam&#39;s Amazon link"));
+});
+
+test("person: the note under the name says whose page it is and links to your own list", () => {
+  const hash = "#/x/family/p/1";
+  assert.match(renderWhose({ kind: "you", name: "Sam", mine: null }, ""), /This is your page/);
+  const getting = renderWhose({ kind: "getting", name: "Sam", mine: 1 }, hash);
+  assert.match(getting, /You&#39;re getting Sam/);
+  assert.ok(getting.includes(`href="${hash}"`) && getting.includes("Go to your own list"));
+  const other = renderWhose({ kind: "other", name: "Sam", mine: 3 }, "#/x/family/p/3");
+  assert.match(other, /This is Sam&#39;s list/);
+  assert.ok(other.includes("Go to your own list"));
+  assert.ok(!renderWhose({ kind: "other", name: "Sam", mine: null }, "").includes("Go to your own list"));
+});
+
+test("home: a Your list card for the phone's person when they're on this year's roster", () => {
+  const people = [{ id: 1, name: "Alex", item_count: 0, has_amazon: false }, { id: 2, name: "Sam", item_count: 3, has_amazon: true }];
+  assert.deepEqual(myListOf(people, { person_id: 2, name: "Sam" }), people[1]);
+  assert.equal(myListOf(people, { person_id: null, name: "Riley" }), null);
+  assert.equal(myListOf(people, { person_id: 9, name: "Casey" }), null);
+  assert.equal(myListOf(people, null), null);
+  const h = { exchange: { name: "Family", slug: "family" }, edition: { id: 7, label: "2026", status: "open" }, editions: [], pairings: SAM_PAIRS, people };
+  const html = renderHome(h, { person_id: 2, name: "Sam" }, null);
+  assert.ok(html.includes("Your list") && html.includes(`href="${personHash("family", 2, null)}"`) && html.includes("Add your sizes"));
+  assert.ok(!renderHome(h, { person_id: null, name: "Riley" }, null).includes("Your list"));
 });
