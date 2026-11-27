@@ -1,4 +1,6 @@
-// #/x/<slug>/p/<pid>[?e=<edition id>]  One person's page: the basics (profile values with "updated Nov 2025",
+// #/x/<slug>/p/<pid>[?e=<edition id>]  One person's page. A note under the name and the headings say whose page it
+// is from this phone's point of view (ownerOf: "Your sizes and favorites" on your own, "Sam's ..." on anyone else's,
+// with a link back to your own list). Then the basics (profile values with "updated Nov 2025",
 // dimmed with "may be out of date" when stale), Anything else, the Amazon list, and Ideas. Every part has its own
 // edit form.
 //
@@ -10,7 +12,7 @@
 // so saving theirs never quietly puts back someone else's older text.
 import { get, send } from "./api.js";
 import { applyAccent, dayLabel, esc, fromHtml, isStale, monthLabel, nowSec, renderError, renderLink, toast } from "./core.js";
-import { homePath, renderWho } from "./home.js";
+import { homePath, personHash, renderWho, youreGetting } from "./home.js";
 import { me, showPicker } from "./whoami.js";
 
 const q = s => encodeURIComponent(s);
@@ -93,6 +95,32 @@ const renderButtons = label => `<div class="btn-row"><button class="btn primary"
 const renderHint = hint => (hint ? `<span class="hint">${esc(hint)}</span>` : "");
 const renderEditButton = (show, label) => (show ? `<p><button class="btn" type="button" data-act="edit">${esc(label)}</button></p>` : "");
 
+// whose page
+// Who this page belongs to, from this phone's point of view. kind: "you" (your own page), "getting" (the person you
+// drew) or "other" (anyone else, also when just looking or nobody is picked). mine: your own person id when you have
+// a list on this year's roster and this isn't it, so the page can link back to it; otherwise null.
+export function ownerOf(person, who, pairings, roster) {
+  const myId = who && who.person_id !== null && roster.some(p => p.id === who.person_id) ? who.person_id : null;
+  if (myId === person.id) return { kind: "you", name: person.name, mine: null };
+  const kind = youreGetting(pairings, who)?.recipient_id === person.id ? "getting" : "other";
+  return { kind, name: person.name, mine: myId };
+}
+
+// "Your" / "your" on your own page, else "Sam's", for headings and buttons. Pass the result through esc().
+const whose = (owner, start) => (owner.kind === "you" ? (start ? "Your" : "your") : `${owner.name}'s`);
+
+const editSizesLabel = owner => `Edit ${whose(owner, false)} sizes and favorites`;
+const editDetailsLabel = owner => `Edit this and ${whose(owner, false)} Amazon link`;
+
+const renderOwnLink = myHash => (myHash ? ` <a href="${esc(myHash)}">Go to your own list</a>` : "");
+const WHOSE_NOTE = {
+  you: () => "This is your page. Add your sizes, favorites, and ideas here so whoever has you knows what to get.",
+  getting: owner => `You're getting ${owner.name}. Everything below is about ${owner.name}, to help you choose their gift.`,
+  other: owner => `This is ${owner.name}'s list. Everything below is about ${owner.name}.`,
+};
+export const renderWhose = (owner, myHash) => `
+  <p class="whose ${esc(owner.kind)}">${esc(WHOSE_NOTE[owner.kind](owner))}${renderOwnLink(myHash)}</p>`;
+
 // the basics
 const staleNow = f => isStale(f.updated_at, nowSec());
 const renderStaleClass = f => (staleNow(f) ? "stale" : "");
@@ -100,15 +128,16 @@ const renderStaleNote = f => (staleNow(f) ? " · may be out of date" : "");
 const renderFact = f => `<div class="${renderStaleClass(f)}"><dt>${esc(f.label)}</dt><dd>${esc(f.value)}</dd><dd class="when">updated ${monthLabel(f.updated_at)}${renderStaleNote(f)}</dd></div>`;
 const renderFacts = profile => filledFields(profile).map(renderFact).join("");
 const renderBasicsBody = profile => (filledFields(profile).length ? `<dl class="basics">${renderFacts(profile)}</dl>` : `<p class="muted">Nothing here yet.</p>`);
-export const renderBasicsView = page => `
-  <h2>The basics</h2>
+const OTHER = page => ({ kind: "other", name: page.person.name, mine: null });
+export const renderBasicsView = (page, owner = OTHER(page)) => `
+  <h2>${esc(whose(owner, true))} sizes and favorites</h2>
   ${renderBasicsBody(page.profile)}
-  ${renderEditButton(true, "Edit sizes and favorites")}`;
+  ${renderEditButton(true, editSizesLabel(owner))}`;
 
 const renderFieldInput = f => `<label class="field"><span>${esc(f.label)}</span>${renderHint(f.hint)}<textarea class="short" name="f${esc(f.field_id)}" rows="2" maxlength="500">${esc(f.value)}</textarea></label>`;
 const renderFieldInputs = profile => profile.map(renderFieldInput).join("");
-export const renderBasicsForm = page => `
-  <h2>The basics</h2>
+export const renderBasicsForm = (page, owner = OTHER(page)) => `
+  <h2>${esc(whose(owner, true))} sizes and favorites</h2>
   <div data-slot="msg"></div>
   <form data-form="save" novalidate>
     <p class="muted small">Leave a box empty to clear it. These carry over to next year.</p>
@@ -118,20 +147,20 @@ export const renderBasicsForm = page => `
 
 // Anything else and the Amazon list
 const renderAbout = page => (page.about ? `<p class="about">${esc(page.about)}</p>` : `<p class="muted">Nothing here yet.</p>`);
-const renderAmazon = page => (page.amazon_url ? `<h2>Amazon list</h2><p>${renderLink(page.amazon_url, "btn primary")}</p>` : "");
-export const renderDetailsView = (page, readOnly) => `
+const renderAmazon = (page, owner) => (page.amazon_url ? `<h2>${esc(whose(owner, true))} Amazon list</h2><p>${renderLink(page.amazon_url, "btn primary")}</p>` : "");
+export const renderDetailsView = (page, readOnly, owner = OTHER(page)) => `
   <h2>Anything else</h2>
   ${renderAbout(page)}
-  ${renderAmazon(page)}
-  ${renderEditButton(!readOnly, "Edit this and the Amazon link")}`;
+  ${renderAmazon(page, owner)}
+  ${renderEditButton(!readOnly, editDetailsLabel(owner))}`;
 
-export const renderDetailsForm = page => `
+export const renderDetailsForm = (page, owner = OTHER(page)) => `
   <h2>Anything else</h2>
   <div data-slot="msg"></div>
   <form data-form="save" novalidate>
     <label class="field"><span>Anything else</span><span class="hint">Anything that would help someone choose a gift.</span>
       <textarea name="about" rows="5" maxlength="4000">${esc(page.about)}</textarea></label>
-    <label class="field"><span>Amazon list link</span><span class="hint">Paste the link to an Amazon wish list, if there is one.</span>
+    <label class="field"><span>${esc(whose(owner, true))} Amazon list link</span><span class="hint">Paste the link to an Amazon wish list, if there is one.</span>
       <input name="amazon_url" type="text" inputmode="url" autocapitalize="none" autocomplete="off" spellcheck="false" maxlength="2000" value="${esc(page.amazon_url)}"></label>
     ${renderButtons("Save")}
   </form>`;
@@ -176,8 +205,8 @@ const renderAddForm = () => `
   </form>`;
 const renderBringOver = readOnly => (readOnly ? "" : `<p><button class="btn quiet wide" type="button" data-act="bring-over">Bring over last year's items</button></p>`);
 const renderAddArea = readOnly => (readOnly ? "" : `<div data-unit="add">${renderAddButton()}</div>`);
-const renderIdeas = readOnly => `
-  <h2>Ideas</h2>
+const renderIdeas = (readOnly, owner) => `
+  <h2>${esc(whose(owner, true))} gift ideas</h2>
   <div data-slot="list-msg"></div>
   <div data-slot="undo"></div>
   <ul class="rows" data-list="items"></ul>
@@ -208,14 +237,14 @@ export const renderReloaded = (rows, gone) => `
   </div>`;
 
 const renderClosedNote = readOnly => (readOnly ? `<p class="msg warn">This year is closed, so the ideas and "Anything else" can't change. Sizes and favorites still can.</p>` : "");
-export const renderPage = (home, page, who, backHash, readOnly) => `
+export const renderPage = (home, page, who, backHash, readOnly, owner, myHash) => `
   <a class="back" href="${esc(backHash)}">← Back to ${esc(home.exchange.name)}</a>
   <section class="card head"><h1>${esc(page.person.name)}</h1>
-    <p class="muted">${esc(home.exchange.name)} · ${esc(home.edition.label)}</p>${renderClosedNote(readOnly)}</section>
+    <p class="muted">${esc(home.exchange.name)} · ${esc(home.edition.label)}</p>${renderWhose(owner, myHash)}${renderClosedNote(readOnly)}</section>
   ${renderWho(who)}
   <section class="card" data-unit="basics"></section>
   <section class="card" data-unit="details"></section>
-  <section class="card" data-unit="ideas">${renderIdeas(readOnly)}</section>
+  <section class="card" data-unit="ideas">${renderIdeas(readOnly, owner)}</section>
   <p class="muted small" data-slot="last"></p>`;
 
 // ---------------------------------------------------------------- the screen
@@ -235,7 +264,10 @@ export async function render(ctx) {
   const base = `/api/x/${q(slug)}`;
   let page = first;
 
-  view.innerHTML = renderPage(home, page, me(slug), backHash, readOnly);
+  // Whose page this is depends on who is holding the phone, so it is worked out again when that changes (drawWho).
+  let owner = ownerOf(page.person, me(slug), home.pairings, home.people);
+  const myHash = () => (owner.mine === null ? "" : personHash(slug, owner.mine, editionId));
+  view.innerHTML = renderPage(home, page, me(slug), backHash, readOnly, owner, myHash());
   const list = view.querySelector("[data-list=items]");
   const listMsg = view.querySelector("[data-slot=list-msg]");
   const undoSlot = view.querySelector("[data-slot=undo]");
@@ -251,11 +283,11 @@ export async function render(ctx) {
   function drawBasics() {
     const u = units.basics;
     u.root.hidden = page.profile.length === 0;
-    if (u.mode === "view") u.root.innerHTML = renderBasicsView(page);
+    if (u.mode === "view") u.root.innerHTML = renderBasicsView(page, owner);
   }
   function drawDetails() {
     const u = units.details;
-    if (u.mode === "view") u.root.innerHTML = renderDetailsView(page, readOnly);
+    if (u.mode === "view") u.root.innerHTML = renderDetailsView(page, readOnly, owner);
   }
   function drawItems() {
     const nodes = page.items.map((it, pos) => {
@@ -288,6 +320,11 @@ export async function render(ctx) {
   // ---- who is saving
   function drawWho() {
     view.querySelector(".who")?.replaceWith(fromHtml(renderWho, me(slug)));
+    owner = ownerOf(page.person, me(slug), home.pairings, home.people);
+    view.querySelector(".whose")?.replaceWith(fromHtml(renderWhose, owner, myHash()));
+    view.querySelector("[data-unit=ideas] > h2").textContent = `${whose(owner, true)} gift ideas`;
+    drawBasics();
+    drawDetails();
   }
   async function whoSaves() {
     const who = me(slug) ?? (await showPicker(slug, home.people));
@@ -304,10 +341,10 @@ export async function render(ctx) {
 
   function openForm(u) {
     if (u.kind === "basics") {
-      u.root.innerHTML = renderBasicsForm(page);
+      u.root.innerHTML = renderBasicsForm(page, owner);
       u.expected = stamps(page.profile);
     } else if (u.kind === "details") {
-      u.root.innerHTML = renderDetailsForm(page);
+      u.root.innerHTML = renderDetailsForm(page, owner);
       u.version = page.version;
     } else if (u.kind === "item") {
       const it = itemData(u.id);

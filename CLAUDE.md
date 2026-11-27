@@ -205,6 +205,10 @@ Later modules are listed so the layout is known; add each to this file when it l
   - Links out are `target="_blank" rel="noopener noreferrer"` with the text `Open link · <hostLabel>` (`core.renderLink`).
   - Undo and bring-over (`person.js`): a delete shows "Deleted · Undo" in its own `[data-slot=undo]` for `UNDO_MS` (8 s),
     one line and timer per idea; "Bring over last year's items" sits under Add an idea and is hidden in a closed year.
+  - Whose page (`person.js` `ownerOf`, `home.js` `myListOf`): the person page's note and headings say whose it is
+    from the `gx_me_<slug>` person: "This is your page" and "Your sizes and favorites", "You're getting Sam" or
+    "This is Sam's list" and "Sam's sizes and favorites", plus "Go to your own list" when you're on this year's
+    roster. It is worked out again when the picker changes who you are. Home shows a "Your list" card for that person.
   - Draw screen (`admin-draw.js`, linked from the pairings screen): exclusions save on Add/Remove; a look-back select
     (1 to 3, default 1) and a single-loop checkbox; the preview lists names with Redraw and Publish, and any change to
     the rules or options drops it. Hidden with `drawBlocked(overview)`'s reason unless the year is open with no rows.

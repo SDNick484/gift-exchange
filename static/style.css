@@ -109,6 +109,11 @@ main { max-width: 720px; margin: 0 auto; padding: 0 16px; }
 .banner .big { font-size: 1.6rem; font-weight: 800; letter-spacing: .02em; }
 .banner a { color: var(--accent-ink); font-weight: 700; }
 
+/* whose page this is (person page), and "Your list" (home) */
+.whose { font-weight: 600; }
+.whose a { font-weight: 700; }
+.mine { border-left: 6px solid var(--accent); }
+
 /* lists of rows */
 .rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .rows > li { border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; background: var(--surface); }

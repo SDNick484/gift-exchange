@@ -33,6 +33,12 @@ export function ideasLabel(count) {
   return `${count} ${count === 1 ? "idea" : "ideas"}`;
 }
 
+// This phone's person's own row in this year's list, or null (just looking, nobody picked, or off the roster).
+export function myListOf(people, who) {
+  if (!who || who.person_id === null) return null;
+  return people.find(p => p.id === who.person_id) ?? null;
+}
+
 // Everyone's lists with this phone's person first.
 export function youFirst(people, who) {
   const mine = people.filter(p => who && p.id === who.person_id);
@@ -69,6 +75,13 @@ const renderBanner = (pair, slug, editionId) => (pair ? `
     <p><a href="${esc(personHash(slug, pair.recipient_id, editionId))}">See ${esc(pair.recipient)}'s list</a></p>
   </section>` : "");
 
+const renderMine = (mine, slug, editionId) => (mine ? `
+  <section class="card mine" aria-label="Your list">
+    <h2>Your list</h2>
+    <p>Add your sizes, favorites, Amazon link, and gift ideas, so whoever has you knows what to get. <span class="muted small">${esc(ideasLabel(mine.item_count))}${renderAmazon(mine)}</span></p>
+    <p><a class="btn primary" href="${esc(personHash(slug, mine.id, editionId))}">Update your list</a></p>
+  </section>` : "");
+
 const renderPair = p => `<li>${esc(p.giver)} → ${esc(p.recipient ?? "?")}</li>`;
 const renderPairRows = pairings => pairings.map(renderPair).join("");
 const renderPairs = pairings => (pairings === null || pairings.length === 0
@@ -90,6 +103,7 @@ export const renderHome = (h, who, editionId) => `
   ${renderHead(h)}
   ${renderWho(who)}
   ${renderBanner(youreGetting(h.pairings, who), h.exchange.slug, editionId)}
+  ${renderMine(myListOf(h.people, who), h.exchange.slug, editionId)}
   <section class="card"><h2>Who has whom</h2>${renderPairs(h.pairings)}</section>
   <section class="card"><h2>Everyone's lists</h2>${renderPeople(youFirst(h.people, who), h.exchange.slug, editionId, who)}</section>`;
 
